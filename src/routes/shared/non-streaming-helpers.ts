@@ -3,7 +3,6 @@ import type { StatusCode } from "hono/utils/http-status";
 import type { ChainAdvanceTicket, SessionAffinityMap } from "../../auth/session-affinity.js";
 import type { AccountPool } from "../../auth/account-pool.js";
 import { clearCfChallengeCooldown } from "../../auth/cf-challenge-cooldown.js";
-import { markFallbackUsed } from "../../auth/fallback-state.js";
 import { annotateUsageCost } from "./proxy-handler-utils.js";
 import type { CodexApi, WsPoolContext } from "../../proxy/codex-api.js";
 import { CodexApiError } from "../../proxy/codex-api.js";
@@ -285,10 +284,11 @@ export async function retryNonStreamingEmptyResponse(
 
   const email = accountPool.getEntry(currentEntryId)?.email ?? "?";
   logWarn(
-    `[${tag}] Account ${currentEntryId} (${email}) | Empty response (attempt ${attempt}/${maxRetries + 1}), switching account...`,
+    `[${tag}] Account ${currentEntryId} (${email}) | Empty response (attempt ${attempt}/${maxRetries + 1}), retrying current CLI account...`,
   );
   accountPool.recordEmptyResponse(currentEntryId);
   releaseAccount(accountPool, currentEntryId, annotateUsageCost(req.model, annotateImageGenOutcome(collectErr.usage, req.expectsImageGen)), released);
+  released.delete(currentEntryId);
   restoreImplicitResumeRequest?.();
 
   const acquired = acquireAccount(accountPool, req.codexRequest.model, undefined, tag);
@@ -296,7 +296,7 @@ export async function retryNonStreamingEmptyResponse(
     return {
       action: "respond",
       status: 502,
-      message: "Codex returned an empty response and no other accounts are available for retry",
+      message: "Codex returned an empty response and the current CLI account is unavailable for retry",
     };
   }
 
@@ -309,11 +309,6 @@ export async function retryNonStreamingEmptyResponse(
     acquired.codexFingerprintMode ?? "off",
   );
   setActiveAccount?.(acquired.entryId, nextApi);
-
-  // 从当前空响应账号切到 acquireAccount 取得的候选账号，属于“备用账号重试”这一
-  // 后备形态：取得后备账号即点亮后备指示灯（即使后续重试仍失败，指示灯也会在约
-  // 60 秒内保持点亮，见 fallback-state.markFallbackUsed 的语义说明）。
-  markFallbackUsed(nowMs());
 
   // 与主 egress 行（proxy-handler 的 accountDisplayName）保持一致的账号展示格式：
   // label → email → 短 id，避免同一 requestId 下不同行展示格式不一致。

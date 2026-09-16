@@ -4,14 +4,12 @@
  * Verifies:
  * 1. Multiple parallel requests all return complete, valid responses
  * 2. No response corruption or cross-contamination
- * 3. Usage tracking is accurate under concurrent load
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
 import {
   PROXY_URL, TIMEOUT,
   checkProxy, skip, headers,
-  getActiveAccounts, resetAllUsage,
 } from "./_helpers.js";
 
 beforeAll(async () => {
@@ -135,26 +133,6 @@ describe("real: concurrent streaming requests", () => {
       expect(r.text.length).toBeGreaterThan(0);
       expect(r.text).toContain(String(expected[i]));
     }
-  }, TIMEOUT * 3);
-});
-
-describe("real: concurrent usage tracking", () => {
-  it("usage counts match actual request count under concurrency", async () => {
-    if (skip()) return;
-
-    await resetAllUsage();
-
-    const concurrency = 3;
-    const requests = Array.from({ length: concurrency }, (_, i) => sendUniqueRequest(i + 100));
-    const results = await Promise.all(requests);
-
-    for (const r of results) {
-      expect(r.status).toBe(200);
-    }
-
-    const accounts = await getActiveAccounts();
-    const totalRequests = accounts.reduce((sum, a) => sum + a.usage.request_count, 0);
-    expect(totalRequests).toBe(concurrency);
   }, TIMEOUT * 3);
 });
 

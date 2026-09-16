@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import yaml from "js-yaml";
 import { getConfigDir, getDataDir } from "./paths.js";
@@ -145,15 +145,6 @@ export function loadMergedConfig(configDir?: string): {
   // otherwise use the standard data directory.
   const dataDir = configDir ? resolve(configDir, "..", "data") : getDataDir();
   const localPath = resolve(dataDir, "local.yaml");
-  if (!existsSync(localPath)) {
-    try {
-      mkdirSync(dataDir, { recursive: true });
-      writeFileSync(localPath, "server:\n  proxy_api_key: pwd\n", "utf-8");
-      console.log("[Config] Created data/local.yaml with default proxy_api_key");
-    } catch (err) {
-      console.warn(`[Config] Failed to create data/local.yaml: ${err instanceof Error ? err.message : err}`);
-    }
-  }
   let local: Record<string, unknown> | null = null;
   if (existsSync(localPath)) {
     try {
@@ -176,15 +167,10 @@ export function applyEnvOverrides(
   localOverrides: Record<string, unknown> | null,
 ): Record<string, unknown> {
   const proxyApiKeyEnv = process.env.PROXY_API_KEY?.trim();
+  if (!raw.server) raw.server = {};
+  delete (raw.server as Record<string, unknown>).proxy_api_key;
   if (proxyApiKeyEnv) {
-    if (!raw.server) raw.server = {};
     (raw.server as Record<string, unknown>).proxy_api_key = proxyApiKeyEnv;
-  }
-  const jwtEnv = process.env.CODEX_JWT_TOKEN?.trim();
-  if (jwtEnv && jwtEnv.startsWith("eyJ")) {
-    (raw.auth as Record<string, unknown>).jwt_token = jwtEnv;
-  } else if (jwtEnv) {
-    console.warn("[Config] CODEX_JWT_TOKEN ignored: not a valid JWT (must start with 'eyJ')");
   }
   if (process.env.CODEX_PLATFORM) {
     (raw.client as Record<string, unknown>).platform = process.env.CODEX_PLATFORM;

@@ -179,9 +179,14 @@ vi.mock("fs", async (importOriginal) => {
       if (typeof path === "string" && path.includes("models.yaml")) return modelsYaml;
       if (typeof path === "string" && path.includes("desktop-context.md")) return "";
       if (typeof path === "string" && path.includes("index.html")) return "<html>test</html>";
+      if (typeof path === "string" && path.endsWith("auth.json")) {
+        return actual.readFileSync(path, "utf-8");
+      }
       throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" });
     }),
-    existsSync: vi.fn((p: string) => typeof p === "string" && p.includes("models.yaml")),
+    existsSync: vi.fn((p: string) => typeof p === "string" && (
+      p.includes("models.yaml") || (p.endsWith("auth.json") && actual.existsSync(p))
+    )),
     writeFileSync: vi.fn(),
     renameSync: vi.fn(),
     mkdirSync: vi.fn(),

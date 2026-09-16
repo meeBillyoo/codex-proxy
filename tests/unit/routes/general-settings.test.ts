@@ -24,10 +24,6 @@ const mockConfig = {
     skip_exhausted: true,
   },
   auth: {
-    rotation_strategy: "least_used",
-    refresh_enabled: true,
-    refresh_margin_seconds: 300,
-    refresh_concurrency: 2,
     max_concurrent_per_account: 3 as number | null,
     request_interval_ms: 50 as number | null,
   },
@@ -43,7 +39,6 @@ vi.mock("@src/config.js", () => ({
   getConfig: vi.fn(() => mockConfig),
   reloadAllConfigs: vi.fn(),
   getLocalConfigPath: vi.fn(() => "/tmp/test/local.yaml"),
-  ROTATION_STRATEGIES: ["least_used", "round_robin", "sticky"],
 }));
 
 vi.mock("@src/paths.js", () => ({
@@ -152,7 +147,6 @@ describe("GET /admin/general-settings", () => {
       default_model: "gpt-5.4",
       image_host_model: "gpt-5.5",
       model_aliases: {},
-      refresh_enabled: true,
       auto_update: true,
       auto_download: false,
       show_update_dialog: false,

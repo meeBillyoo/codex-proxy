@@ -4,7 +4,7 @@ import { Hono } from "hono";
 const mockConfig = {
   server: { proxy_api_key: "secret-key" as string | null, trust_proxy: false },
   session: { ttl_minutes: 60, cleanup_interval_minutes: 5 },
-  auth: { rotation_strategy: "least_used" as string },
+  auth: {},
   quota: {
     refresh_interval_minutes: 5,
     warning_thresholds: { primary: [80, 90], secondary: [80, 90] },
@@ -88,6 +88,7 @@ function createApp(): Hono {
 describe("dashboard auth endpoints", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.PROXY_API_KEY = "secret-key";
     mockConfig.server.proxy_api_key = "secret-key";
     mockConfig.server.trust_proxy = false;
     mockGetConnInfo.mockReturnValue({ remote: { address: "192.168.1.100" } });
@@ -209,22 +210,22 @@ describe("dashboard auth endpoints", () => {
   });
 
   describe("GET /auth/dashboard-status", () => {
-    it("returns required=false when no key configured", async () => {
+    it("requires authentication even when legacy config has no key", async () => {
       mockConfig.server.proxy_api_key = null;
       const app = createApp();
       const res = await app.request("/auth/dashboard-status");
       const body = await res.json();
-      expect(body.required).toBe(false);
-      expect(body.authenticated).toBe(true);
+      expect(body.required).toBe(true);
+      expect(body.authenticated).toBe(false);
     });
 
-    it("returns required=false for localhost", async () => {
+    it("requires authentication for localhost", async () => {
       mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
       const app = createApp();
       const res = await app.request("/auth/dashboard-status");
       const body = await res.json();
-      expect(body.required).toBe(false);
-      expect(body.authenticated).toBe(true);
+      expect(body.required).toBe(true);
+      expect(body.authenticated).toBe(false);
     });
 
     it("returns required=true, authenticated=false for remote without session", async () => {
@@ -247,14 +248,14 @@ describe("dashboard auth endpoints", () => {
       expect(body.authenticated).toBe(false);
     });
 
-    it("returns required=false when trust_proxy=true but no XFF (direct localhost)", async () => {
+    it("requires authentication for a direct localhost request behind a trusted proxy", async () => {
       mockConfig.server.trust_proxy = true;
       mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
       const app = createApp();
       const res = await app.request("/auth/dashboard-status");
       const body = await res.json();
-      expect(body.required).toBe(false);
-      expect(body.authenticated).toBe(true);
+      expect(body.required).toBe(true);
+      expect(body.authenticated).toBe(false);
     });
 
     it("returns required=true, authenticated=true for remote with valid session", async () => {
@@ -277,47 +278,4 @@ describe("dashboard auth endpoints", () => {
     });
   });
 
-  describe("POST /admin/settings — remote clear protection", () => {
-    it("blocks remote session from clearing proxy_api_key", async () => {
-      const app = createApp();
-      const res = await app.request("/admin/settings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer secret-key",
-        },
-        body: JSON.stringify({ proxy_api_key: null }),
-      });
-      expect(res.status).toBe(403);
-      const body = await res.json();
-      expect(body.error).toContain("Cannot clear");
-    });
-
-    it("allows localhost to clear proxy_api_key", async () => {
-      mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
-      const app = createApp();
-      const res = await app.request("/admin/settings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer secret-key",
-        },
-        body: JSON.stringify({ proxy_api_key: null }),
-      });
-      expect(res.status).toBe(200);
-    });
-
-    it("allows remote session to change (not clear) proxy_api_key", async () => {
-      const app = createApp();
-      const res = await app.request("/admin/settings", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer secret-key",
-        },
-        body: JSON.stringify({ proxy_api_key: "new-key" }),
-      });
-      expect(res.status).toBe(200);
-    });
-  });
 });

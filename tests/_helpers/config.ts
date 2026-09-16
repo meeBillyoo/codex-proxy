@@ -42,18 +42,9 @@ export function createMockConfig(overrides?: MockConfigOverrides): AppConfig {
       suppress_desktop_directives: true,
     },
     auth: {
-      jwt_token: null,
-      chatgpt_oauth: true,
-      refresh_margin_seconds: 300,
-      refresh_enabled: true,
-      refresh_concurrency: 2,
       max_concurrent_per_account: 3,
       request_interval_ms: 50,
-      rotation_strategy: "least_used",
       rate_limit_backoff_seconds: 60,
-      oauth_client_id: "app_test",
-      oauth_auth_endpoint: "https://auth.openai.com/oauth/authorize",
-      oauth_token_endpoint: "https://auth.openai.com/oauth/token",
     },
     server: {
       host: "0.0.0.0",
@@ -83,7 +74,6 @@ export function createMockConfig(overrides?: MockConfigOverrides): AppConfig {
     },
     official_agent: {
       enabled: false,
-      api_key: null,
       app_server_url: "ws://127.0.0.1:4500",
       request_timeout_ms: 30000,
       auth: { type: "none" },

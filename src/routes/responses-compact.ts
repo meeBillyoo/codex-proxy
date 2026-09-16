@@ -12,18 +12,13 @@ import { CodexApi, CodexApiError } from "../proxy/codex-api.js";
 import type { CodexCompactRequest } from "../proxy/codex-api.js";
 import { sanitizeCodexInputItems } from "../proxy/reasoning-input-sanitizer.js";
 import type { UsageInfo } from "../translation/codex-event-extractor.js";
-import type { UpstreamRouter } from "../proxy/upstream-router.js";
-import { supportsCodexAuxiliaryJson } from "../proxy/upstream-adapter.js";
 import { parseModelName, resolveModelId, isRequestableModel } from "../models/model-store.js";
-import { handleDirectRequest } from "./shared/direct-request-handler.js";
 import { acquireAccount, releaseAccount } from "./shared/account-acquisition.js";
 import { handleCodexApiError } from "./shared/proxy-error-handler.js";
 import { staggerIfNeeded } from "./shared/proxy-stagger.js";
 import { withRetry } from "../utils/retry.js";
-import { PASSTHROUGH_FORMAT } from "./responses-passthrough.js";
 import { isRecord } from "../translation/shared-utils.js";
 import { annotateUsageCost } from "./shared/proxy-handler-utils.js";
-import { handleCodexAuxiliaryJson } from "./codex-auxiliary.js";
 
 // ── Helpers ───────────────────────────────────────────────────────
 
@@ -57,29 +52,9 @@ export async function handleCompact(
   cookieJar: CookieJar | undefined,
   proxyPool: ProxyPool | undefined,
   body: Record<string, unknown>,
-  upstreamRouter?: UpstreamRouter,
 ): Promise<Response> {
   const rawModel = typeof body.model === "string" ? body.model : "codex";
-  const compactRouteMatch = upstreamRouter?.resolveMatch(rawModel);
-  if (
-    (compactRouteMatch?.kind === "api-key" || compactRouteMatch?.kind === "adapter")
-    && supportsCodexAuxiliaryJson(compactRouteMatch.adapter)
-  ) {
-    const directModel = compactRouteMatch.resolvedModel ?? rawModel;
-    return handleCodexAuxiliaryJson({
-      c,
-      upstream: compactRouteMatch.adapter,
-      path: "responses/compact",
-      body: directModel === rawModel ? body : { ...body, model: directModel },
-      model: directModel,
-    });
-  }
-
-  if (
-    compactRouteMatch?.kind !== "api-key"
-    && compactRouteMatch?.kind !== "adapter"
-    && !isRequestableModel(rawModel)
-  ) {
+  if (!isRequestableModel(rawModel)) {
     c.status(404);
     return c.json({
       type: "error",
@@ -130,28 +105,6 @@ export async function handleCompact(
         ...(typeof body.text.format.strict === "boolean" ? { strict: body.text.format.strict } : {}),
       },
     };
-  }
-
-  if (compactRouteMatch?.kind === "api-key" || compactRouteMatch?.kind === "adapter") {
-    const directModel = compactRouteMatch.resolvedModel ?? rawModel;
-    const directReq = {
-      codexRequest: {
-        model: directModel,
-        input: compactRequest.input,
-        instructions: compactRequest.instructions,
-        stream: true as const,
-        store: false as const,
-        ...(compactRequest.tools ? { tools: compactRequest.tools } : {}),
-        ...(compactRequest.parallel_tool_calls !== undefined
-          ? { parallel_tool_calls: compactRequest.parallel_tool_calls }
-          : {}),
-        ...(compactRequest.reasoning ? { reasoning: compactRequest.reasoning } : {}),
-        ...(compactRequest.text ? { text: compactRequest.text } : {}),
-      },
-      model: directModel,
-      isStreaming: false,
-    };
-    return handleDirectRequest({ c, upstream: compactRouteMatch.adapter, req: directReq, fmt: PASSTHROUGH_FORMAT });
   }
 
   const TAG = "Compact";

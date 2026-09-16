@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockConfig = {
   server: { proxy_api_key: null as string | null },
   auth: {
-    rotation_strategy: "least_used" as const,
     rate_limit_backoff_seconds: 60,
   },
 };
@@ -25,10 +24,10 @@ function countTokensBody() {
 describe("messages count_tokens route", () => {
   beforeEach(() => {
     mockConfig.server.proxy_api_key = null;
+    process.env.PROXY_API_KEY = "proxy-secret";
   });
 
   it("requires proxy API key when configured", async () => {
-    mockConfig.server.proxy_api_key = "proxy-secret";
     const pool = new AccountPool();
     const app = createMessagesRoutes(pool);
 

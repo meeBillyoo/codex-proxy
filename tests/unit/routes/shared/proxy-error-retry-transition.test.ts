@@ -133,7 +133,7 @@ describe("applyProxyErrorRetryTransition", () => {
     });
   });
 
-  it("does not release rate-limit fallback accounts before acquiring the next account", () => {
+  it("releases a rate-limited account before acquiring the next account", () => {
     const accountPool = mockPool({ acquiredAccount: acquired({ entryId: "entry-2" }) });
     const restoreImplicitResumeRequest = vi.fn();
 
@@ -150,7 +150,7 @@ describe("applyProxyErrorRetryTransition", () => {
     });
 
     expect(result.action).toBe("retry");
-    expect(accountPool.release).not.toHaveBeenCalled();
+    expect(accountPool.release).toHaveBeenCalledWith("entry-1", undefined);
     expect(restoreImplicitResumeRequest).toHaveBeenCalledOnce();
     expect(accountPool.acquire).toHaveBeenCalledWith({
       model: "gpt-5.4",
@@ -186,7 +186,7 @@ describe("applyProxyErrorRetryTransition", () => {
       attemptFallback: true,
       modelRetried: false,
     });
-    expect(accountPool.release).not.toHaveBeenCalled();
+    expect(accountPool.release).toHaveBeenCalledWith("entry-1", undefined);
     expect(restoreImplicitResumeRequest).toHaveBeenCalledOnce();
     expect(accountPool.acquire).not.toHaveBeenCalled();
   });

@@ -15,9 +15,7 @@ const mockConfig = {
     ttl_minutes: 60,
     cleanup_interval_minutes: 5,
   },
-  auth: {
-    rotation_strategy: "least_used",
-  },
+  auth: {},
   quota: {
     refresh_interval_minutes: 5,
     warning_thresholds: { primary: [80, 90], secondary: [80, 90] },
@@ -126,6 +124,7 @@ describe("dashboard-authenticated error-log admin actions", () => {
   beforeEach(() => {
     tmpDataDir = mkdtempSync(resolve(tmpdir(), "errlog-dashboard-auth-"));
     mockConfig.server.proxy_api_key = "secret-key";
+    process.env.PROXY_API_KEY = "secret-key";
     mockConfig.server.trust_proxy = true;
     mockConfig.observability.local_error_log = true;
     mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
@@ -175,21 +174,4 @@ describe("dashboard-authenticated error-log admin actions", () => {
     expect(await readCount(app, cookie)).toEqual({ total: 0, unread: 0 });
   });
 
-  it("allows cookie-only dashboard sessions to mutate admin settings routes", async () => {
-    const app = createProductionOrderedApp();
-    const cookie = await loginDashboard(app);
-
-    const res = await app.request("/admin/settings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Cookie: cookie,
-        "X-Forwarded-For": "8.8.8.8",
-      },
-      body: JSON.stringify({ proxy_api_key: "secret-key" }),
-    });
-
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ success: true, proxy_api_key: "secret-key" });
-  });
 });

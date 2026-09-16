@@ -26,8 +26,6 @@ const mockConfig = {
     suppress_desktop_directives: false,
   },
   auth: {
-    jwt_token: undefined as string | undefined,
-    rotation_strategy: "least_used" as const,
     rate_limit_backoff_seconds: 60,
   },
 };
@@ -45,13 +43,15 @@ vi.mock("fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs")>();
   return {
     ...actual,
-    readFileSync: vi.fn(() => "models: []"),
+    readFileSync: vi.fn((path: string) => path.endsWith("auth.json")
+      ? JSON.stringify({ tokens: { access_token: "test-token", account_id: "account-test" } })
+      : "models: []"),
     writeFileSync: vi.fn(),
     writeFile: vi.fn(
       (_p: string, _d: string, _e: string, cb: (err: Error | null) => void) =>
         cb(null),
     ),
-    existsSync: vi.fn(() => false),
+    existsSync: vi.fn((path: string) => path.endsWith("auth.json")),
     mkdirSync: vi.fn(),
     renameSync: vi.fn(),
   };
@@ -115,7 +115,6 @@ vi.mock("@src/routes/shared/proxy-handler.js", () => ({
 // ── Imports ─────────────────────────────────────────────────────────
 
 import { AccountPool } from "@src/auth/account-pool.js";
-import { ClientKeyPool } from "@src/auth/client-key-pool.js";
 import { loadStaticModels } from "@src/models/model-store.js";
 import { createResponsesRoutes } from "@src/routes/responses.js";
 import { ResponsesWebSocketServer } from "@src/routes/responses-websocket.js";
@@ -181,7 +180,6 @@ function receiveJsonFrames(ws: WebSocket, count: number): Promise<unknown[]> {
 
 describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
   let pool: AccountPool;
-  let clientKeyPool: ClientKeyPool;
   let app: Hono;
   let server: Server;
   let wsServer: ResponsesWebSocketServer;
@@ -191,11 +189,10 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
     vi.clearAllMocks();
     capturedCodexRequest = null;
     requestedStreams = 0;
-    mockConfig.server.proxy_api_key = null;
+    process.env.PROXY_API_KEY = "master-key";
     loadStaticModels();
     pool = new AccountPool();
-    pool.addAccount("test-token-1");
-    clientKeyPool = new ClientKeyPool();
+    vi.spyOn(pool, "isAuthenticated").mockReturnValue(true);
     app = createResponsesRoutes(pool);
     const handle = serve({ fetch: app.fetch, hostname: "127.0.0.1", port: 0 });
     server = handle as unknown as Server;
@@ -204,7 +201,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
     await new Promise<void>((resolve) => server.once("listening", () => resolve()));
     const addr = server.address() as AddressInfo;
     port = addr.port;
-    wsServer = new ResponsesWebSocketServer({ server, app, accountPool: pool, clientKeyPool });
+    wsServer = new ResponsesWebSocketServer({ server, app, accountPool: pool });
   });
 
   afterEach(async () => {
@@ -216,26 +213,23 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
   });
 
   it("accepts a WebSocket upgrade on /v1/responses", async () => {
-    mockConfig.server.proxy_api_key = "master-key";
     const { ws } = await connectClient(port, "Bearer master-key");
     expect(ws.readyState).toBe(WebSocket.OPEN);
     ws.close();
   });
 
   it("rejects an unauthenticated upgrade with 401", async () => {
-    mockConfig.server.proxy_api_key = "master-key";
     await expect(connectClient(port)).rejects.toMatchObject({ status: 401 });
   });
 
   it("rejects an upgrade with an invalid Bearer key with 401", async () => {
-    mockConfig.server.proxy_api_key = "master-key";
     await expect(connectClient(port, "Bearer wrong-key")).rejects.toMatchObject({
       status: 401,
     });
   });
 
   it("dispatches a response.create frame and streams events back as WS text frames", async () => {
-    const { ws } = await connectClient(port);
+    const { ws } = await connectClient(port, "Bearer master-key");
     const received = receiveJsonFrames(ws, 3);
     ws.send(RESPONSE_CREATE_BODY);
     const frames = await received;
@@ -256,7 +250,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
   });
 
   it("supports multiple sequential response.create frames on one socket", async () => {
-    const { ws } = await connectClient(port);
+    const { ws } = await connectClient(port, "Bearer master-key");
 
     const first = receiveJsonFrames(ws, 3);
     ws.send(RESPONSE_CREATE_BODY);
@@ -283,7 +277,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
   it("keeps HTTP POST + SSE working as the fallback (WS server attached)", async () => {
     const res = await app.request("/v1/responses", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer master-key" },
       body: RESPONSE_CREATE_BODY,
     });
 
@@ -303,7 +297,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
       ),
     );
 
-    const { ws } = await connectClient(port);
+    const { ws } = await connectClient(port, "Bearer master-key");
     const received = receiveJsonFrames(ws, 1);
     ws.send(RESPONSE_CREATE_BODY);
     const [frame] = await received;
@@ -324,7 +318,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
       ),
     );
 
-    const { ws } = await connectClient(port);
+    const { ws } = await connectClient(port, "Bearer master-key");
     const received = receiveJsonFrames(ws, 1);
     ws.send(RESPONSE_CREATE_BODY);
     const [frame] = await received;
@@ -337,29 +331,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
     ws.close();
   });
 
-  it("rejects an upgrade with a disabled client key with 401 (validateAccess at handshake)", async () => {
-    mockConfig.server.proxy_api_key = "master-key";
-    const entry = clientKeyPool.createKey({ name: "disabled-key", key: "ck-disabled" });
-    clientKeyPool.updateKey(entry.id, { status: "disabled" });
-
-    await expect(connectClient(port, "Bearer ck-disabled")).rejects.toMatchObject({
-      status: 401,
-    });
-  });
-
-  it("rejects an upgrade with an over-budget client key with 429 (validateAccess at handshake)", async () => {
-    mockConfig.server.proxy_api_key = "master-key";
-    clientKeyPool.createKey({ name: "broke-key", key: "ck-broke", max_budget_usd: 1 });
-    const brokeEntry = clientKeyPool.getByKey("ck-broke");
-    brokeEntry!.used_cost_usd = 1.5;
-
-    await expect(connectClient(port, "Bearer ck-broke")).rejects.toMatchObject({
-      status: 429,
-    });
-  });
-
   it("accepts an upgrade using an x-api-key header (same locations as the POST route)", async () => {
-    mockConfig.server.proxy_api_key = "master-key";
     const { ws } = await connectWithHeaders(port, { "x-api-key": "master-key" });
     expect(ws.readyState).toBe(WebSocket.OPEN);
     ws.close();
@@ -386,7 +358,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
       ),
     );
 
-    const { ws } = await connectClient(port);
+    const { ws } = await connectClient(port, "Bearer master-key");
     const first = receiveJsonFrames(ws, 1);
     ws.send(RESPONSE_CREATE_BODY);
     await first;

@@ -5,7 +5,6 @@ import { serve } from "@hono/node-server";
 import { loadConfig, loadFingerprint, getConfig, hasLocalOverride } from "./config.js";
 import { initContext } from "./context.js";
 import { AccountPool } from "./auth/account-pool.js";
-import { RefreshScheduler } from "./auth/refresh-scheduler.js";
 
 import { requestId } from "./middleware/request-id.js";
 import { logger } from "./middleware/logger.js";
@@ -15,9 +14,7 @@ import { logCapture } from "./middleware/log-capture.js";
 import { cors } from "./middleware/cors.js";
 
 import type { Server } from "http";
-import type { UpstreamAdapter } from "./proxy/upstream-adapter.js";
 import { createAuthRoutes } from "./routes/auth.js";
-import { createAccountRoutes } from "./routes/accounts.js";
 import { createChatRoutes } from "./routes/chat.js";
 import { createMessagesRoutes } from "./routes/messages.js";
 import { createGeminiRoutes } from "./routes/gemini.js";
@@ -25,17 +22,13 @@ import { createModelRoutes } from "./routes/models.js";
 import { createBillingRoutes } from "./routes/billing.js";
 import { createWebRoutes } from "./routes/web.js";
 import { CookieJar } from "./proxy/cookie-jar.js";
-import { ProxyPool } from "./proxy/proxy-pool.js";
 import { setWsPoolConfig, getWsPool } from "./proxy/ws-pool.js";
-import { createProxyRoutes } from "./routes/proxies.js";
 import { createResponsesRoutes } from "./routes/responses.js";
 import { ResponsesWebSocketServer } from "./routes/responses-websocket.js";
 import { createImagesRoutes } from "./routes/images.js";
 import { startUpdateChecker, stopUpdateChecker } from "./update-checker.js";
-import { startMemoModelRefresher } from "./memo-model-refresher.js";
 import { startProxyUpdateChecker, stopProxyUpdateChecker, setCloseHandler, getDeployMode } from "./self-update.js";
 import { initProxy } from "./tls/proxy.js";
-import { cleanupStaleLocks } from "./auth/refresh-lock.js";
 import { initTransport, getTransport } from "./tls/transport.js";
 import { loadStaticModels } from "./models/model-store.js";
 import { startModelRefresh, stopModelRefresh } from "./models/model-fetcher.js";
@@ -44,17 +37,6 @@ import { ActiveQuotaRefresher } from "./auth/active-quota-refresher.js";
 import { UsageStatsStore } from "./auth/usage-stats.js";
 import { startSessionCleanup, stopSessionCleanup } from "./auth/dashboard-session.js";
 import { createDashboardAuthRoutes } from "./routes/dashboard-login.js";
-import { OpenAIUpstream } from "./proxy/openai-upstream.js";
-import { AnthropicUpstream } from "./proxy/anthropic-upstream.js";
-import { GeminiUpstream } from "./proxy/gemini-upstream.js";
-import { ApiKeyPool } from "./auth/api-key-pool.js";
-import { ClientKeyPool } from "./auth/client-key-pool.js";
-import { FallbackUpstreamStore } from "./auth/fallback-upstream.js";
-import { createApiKeyRoutes } from "./routes/api-keys.js";
-import { ApiKeyModelCache } from "./auth/api-key-model-cache.js";
-import { ApiKeyMemoStore } from "./auth/api-key-memo-store.js";
-import { createEmbeddingsRoutes } from "./routes/embeddings.js";
-import { createRuntimeUpstreamRouter } from "./proxy/upstream-router-bootstrap.js";
 import { startOllamaBridge, stopOllamaBridge } from "./ollama/server.js";
 import { createOfficialAgentRoutes } from "./routes/official-agent.js";
 import { installUncaughtErrorHandlers } from "./logs/error-log.js";
@@ -89,6 +71,9 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
   // Load configuration
   console.log("[Init] Loading configuration...");
   const config = loadConfig();
+  if (!process.env.PROXY_API_KEY?.trim()) {
+    throw new Error("PROXY_API_KEY is required. Set it in the process environment before starting codex-proxy.");
+  }
   const fingerprint = loadFingerprint();
 
   // Load static model catalog (before transport/auth init)
@@ -101,24 +86,9 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
   const transport = await initTransport();
   initContext(config, fingerprint, transport);
 
-  // Clean up stale refresh locks from previous crashes
-  cleanupStaleLocks();
-
   // Initialize managers
   const accountPool = new AccountPool();
-  const refreshScheduler = new RefreshScheduler(accountPool);
   const cookieJar = new CookieJar();
-  const proxyPool = new ProxyPool();
-  refreshScheduler.setProxyPool(proxyPool);
-
-  // Reactive refresh: when upstream 401 marks an account expired, trigger immediate RT→AT refresh.
-  // Skip if the scheduler itself just marked it expired (permanent failure) — isRefreshing() is
-  // still true at that point because the callback fires synchronously inside doRefresh's try block.
-  accountPool.onExpired((id) => {
-    if (!refreshScheduler.isRefreshing(id)) {
-      refreshScheduler.triggerRefreshNow(id);
-    }
-  });
 
   // Create Hono app
   const app = new Hono();
@@ -142,88 +112,27 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
     maxAgeMs: cfg.ws_pool.max_age_ms,
     maxPerAccount: cfg.ws_pool.max_per_account,
   });
-  const adapters = new Map<string, UpstreamAdapter>();
-  if (cfg.providers.openai) {
-    adapters.set(
-      "openai",
-      new OpenAIUpstream("openai", cfg.providers.openai.api_key, cfg.providers.openai.base_url),
-    );
-    console.log("[Init] OpenAI upstream configured");
-  }
-  if (cfg.providers.anthropic) {
-    adapters.set("anthropic", new AnthropicUpstream(cfg.providers.anthropic.api_key, cfg.providers.anthropic.base_url));
-    console.log("[Init] Anthropic upstream configured");
-  }
-  if (cfg.providers.gemini) {
-    adapters.set("gemini", new GeminiUpstream(cfg.providers.gemini.api_key, cfg.providers.gemini.base_url));
-    console.log("[Init] Gemini upstream configured");
-  }
-  for (const [name, provider] of Object.entries(cfg.providers.custom)) {
-    adapters.set(name, new OpenAIUpstream(name, provider.api_key, provider.base_url));
-    console.log(`[Init] Custom upstream "${name}" configured (${provider.base_url})`);
-    for (const model of provider.models) {
-      if (!cfg.model_routing[model]) {
-        cfg.model_routing[model] = name;
-      }
-    }
-  }
-  // Initialize API key pool for runtime-managed third-party keys
-  const apiKeyPool = new ApiKeyPool();
-  const hasApiKeys = apiKeyPool.getAll().length > 0;
-  const upstreamRouter = createRuntimeUpstreamRouter(adapters, cfg.model_routing, apiKeyPool);
-  if (hasApiKeys) console.log(`[Init] API key pool: ${apiKeyPool.getAll().length} key(s) loaded`);
-
-  // Daily memo model-list refresher (opt-out via local.yaml: api_keys.memo_auto_refresh: false)
-  const apiKeyModelCache = new ApiKeyModelCache();
-  const memoStore = new ApiKeyMemoStore();
-  let stopMemoModelRefresher: (() => void) | null = null;
-  if (cfg.api_keys?.memo_auto_refresh !== false) {
-    stopMemoModelRefresher = startMemoModelRefresher(memoStore, apiKeyModelCache);
-    const memoCount = memoStore.list().length;
-    if (memoCount > 0) console.log(`[Init] Memo model refresher: daily cycle for ${memoCount} memo(s)`);
-  }
-
-  // Initialize Client Key pool for distribution
-  const clientKeyPool = new ClientKeyPool(
-    undefined,
-    () => getConfig().server.proxy_api_key ?? accountPool.getProxyApiKey() ?? null,
-  );
-  const hasClientKeys = clientKeyPool.getAll().length > 0;
-  if (hasClientKeys) console.log(`[Init] Client key pool: ${clientKeyPool.getAll().length} key(s) loaded`);
-
-  // Last-resort upstream apikey (single, Responses API wire). Used only when
-  // every OAuth account is unavailable.
-  const fallbackUpstreamStore = new FallbackUpstreamStore();
-
   // Mount routes
-  const authRoutes = createAuthRoutes(accountPool, refreshScheduler);
-  const accountRoutes = createAccountRoutes(accountPool, refreshScheduler, cookieJar, proxyPool, fallbackUpstreamStore);
-  const chatRoutes = createChatRoutes(accountPool, cookieJar, proxyPool, upstreamRouter, clientKeyPool, fallbackUpstreamStore);
-  const messagesRoutes = createMessagesRoutes(accountPool, cookieJar, proxyPool, upstreamRouter, clientKeyPool, fallbackUpstreamStore);
-  const geminiRoutes = createGeminiRoutes(accountPool, cookieJar, proxyPool, upstreamRouter, clientKeyPool, fallbackUpstreamStore);
-  const responsesRoutes = createResponsesRoutes(accountPool, cookieJar, proxyPool, upstreamRouter, clientKeyPool, fallbackUpstreamStore);
-  const imagesRoutes = createImagesRoutes(accountPool, cookieJar, proxyPool, clientKeyPool);
-  const apiKeyRoutes = createApiKeyRoutes(apiKeyPool, apiKeyModelCache, memoStore);
-  const embeddingsRoutes = createEmbeddingsRoutes(accountPool, apiKeyPool, clientKeyPool);
-  const proxyRoutes = createProxyRoutes(proxyPool, accountPool);
+  const authRoutes = createAuthRoutes(accountPool);
+  const chatRoutes = createChatRoutes(accountPool, cookieJar);
+  const messagesRoutes = createMessagesRoutes(accountPool, cookieJar);
+  const geminiRoutes = createGeminiRoutes(accountPool, cookieJar);
+  const responsesRoutes = createResponsesRoutes(accountPool, cookieJar);
+  const imagesRoutes = createImagesRoutes(accountPool, cookieJar);
   const usageStats = new UsageStatsStore();
   usageStats.recoverBaseline(accountPool);
-  const webRoutes = createWebRoutes(accountPool, usageStats, clientKeyPool);
+  const webRoutes = createWebRoutes(accountPool, usageStats);
 
   app.route("/", createDashboardAuthRoutes());
   app.route("/", authRoutes);
-  app.route("/", accountRoutes);
-  app.route("/", apiKeyRoutes);
-  app.route("/", embeddingsRoutes);
   app.route("/", chatRoutes);
   app.route("/", messagesRoutes);
   app.route("/", geminiRoutes);
   app.route("/", responsesRoutes);
   app.route("/", imagesRoutes);
   app.route("/", createOfficialAgentRoutes());
-  app.route("/", proxyRoutes);
-  app.route("/", createModelRoutes(apiKeyPool, clientKeyPool, accountPool));
-  app.route("/", createBillingRoutes(accountPool, clientKeyPool));
+  app.route("/", createModelRoutes(accountPool));
+  app.route("/", createBillingRoutes(accountPool));
   app.route("/", webRoutes);
 
   // Start server
@@ -233,7 +142,6 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
     ? config.server.host
     : (options?.host ?? config.server.host);
 
-  const poolSummary = accountPool.getPoolSummary();
   const displayHost = (host === "0.0.0.0" || host === "::") ? "localhost" : host;
 
   console.log(`
@@ -250,11 +158,10 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
     const user = accountPool.getUserInfo();
     console.log(`  User: ${user?.email ?? "unknown"}`);
     console.log(`  Plan: ${user?.planType ?? "unknown"}`);
-    const hasProxyApiKey = Boolean(config.server.proxy_api_key ?? accountPool.getProxyApiKey());
-    console.log(`  Key:  ${hasProxyApiKey ? "configured" : "not configured"}`);
-    console.log(`  Pool: ${poolSummary.active} active / ${poolSummary.total} total accounts`);
+    console.log("  Key:  configured through PROXY_API_KEY");
+    console.log(`  Auth: ${accountPool.getAuthFilePath()}`);
   } else {
-    console.log(`  Open http://${displayHost}:${port} to login`);
+    console.log(`  Run codex login as this OS user, then POST /auth/reload`);
   }
   console.log();
 
@@ -269,17 +176,14 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
   }
 
   // Start background model refresh (requires auth to be ready)
-  startModelRefresh(accountPool, cookieJar, proxyPool);
+  startModelRefresh(accountPool, cookieJar);
 
   // Start usage stats snapshot timer (no upstream requests — quota is collected passively)
   startQuotaRefresh(accountPool, usageStats);
 
   // Start active quota refresher — proactively syncs limit_reached / dirty accounts
-  const activeQuotaRefresher = new ActiveQuotaRefresher(accountPool, { cookieJar, proxyPool });
+  const activeQuotaRefresher = new ActiveQuotaRefresher(accountPool, { cookieJar });
   activeQuotaRefresher.start();
-
-  // Start proxy health check timer (if proxies exist)
-  proxyPool.startHealthCheckTimer();
 
   const server = serve({
     fetch: app.fetch,
@@ -294,7 +198,6 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
     server: server as Server,
     app,
     accountPool,
-    clientKeyPool,
   });
 
   // `serve()` returns synchronously before `listen()` actually binds.
@@ -316,14 +219,11 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
     return new Promise((resolve) => {
       server.close(() => {
         stopUpdateChecker();
-        stopMemoModelRefresher?.();
         stopProxyUpdateChecker();
         stopModelRefresh();
         stopQuotaRefresh();
         activeQuotaRefresher.stop();
         stopSessionCleanup();
-        refreshScheduler.destroy();
-        proxyPool.destroy();
         cookieJar.destroy();
         accountPool.destroy();
         resolve();

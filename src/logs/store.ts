@@ -13,12 +13,9 @@ export interface LogRecord {
   path: string;
   model?: string | null;
   provider?: string | null;
-  /** Human-readable identifier of the account that actually served this
-   *  request (label / email / short entry id). Null for paths with no account
-   *  pool (e.g. plain API-key upstreams). */
+  /** Human-readable identifier of the current Codex CLI account. */
   account?: string | null;
-  /** True when this request was served by a fallback (backup account retry or
-   *  fallback upstream apikey) rather than the initially acquired account. */
+  /** True when this request completed through a retry path. */
   fallback?: boolean;
   status?: number | null;
   latencyMs?: number | null;

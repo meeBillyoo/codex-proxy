@@ -120,10 +120,10 @@ export function createOfficialAgentRoutes(bridgeFactory: BridgeFactory = getShar
       c.status(503);
       return c.json(errorBody("official_agent_disabled", "Official Codex app-server bridge is disabled"));
     }
-    const apiKey = config.official_agent.api_key;
+    const apiKey = process.env.PROXY_API_KEY?.trim();
     if (!apiKey) {
-      c.status(403);
-      return c.json(errorBody("official_agent_requires_api_key", "Official Codex app-server bridge requires official_agent.api_key"));
+      c.status(503);
+      return c.json(errorBody("proxy_api_key_missing", "PROXY_API_KEY is required"));
     }
     if (!isAuthorized(c.req.header("Authorization"), apiKey)) {
       c.status(401);

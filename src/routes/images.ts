@@ -7,7 +7,6 @@
 
 import { Hono, type Context } from "hono";
 import type { AccountPool } from "../auth/account-pool.js";
-import type { ClientKeyPool } from "../auth/client-key-pool.js";
 import type { CookieJar } from "../proxy/cookie-jar.js";
 import type { ProxyPool } from "../proxy/proxy-pool.js";
 import { getConfig } from "../config.js";
@@ -19,7 +18,6 @@ import { randomUUID } from "crypto";
 import { errorHandler } from "../middleware/error-handler.js";
 import { apiKeyAuth } from "../middleware/api-key-auth.js";
 import { handleProxyRequest } from "./shared/proxy-handler.js";
-import { validateClientKeyModel } from "./shared/proxy-handler-utils.js";
 import type { FormatAdapter, ProxyRequest } from "./shared/proxy-handler-types.js";
 import {
   buildImageGenerationCodexRequest,
@@ -100,7 +98,6 @@ export function createImagesRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
   proxyPool?: ProxyPool,
-  clientKeyPool?: ClientKeyPool,
 ): Hono {
   const app = new Hono();
   app.onError(errorHandler);
@@ -113,19 +110,6 @@ export function createImagesRoutes(
     }
 
     const request = parsed.data;
-    const modelCheck = validateClientKeyModel(c, request.model);
-    if (!modelCheck.allowed) {
-      c.status(403);
-      return c.json({
-        error: {
-          message: modelCheck.message ?? "Model not allowed for this client key",
-          type: "invalid_request_error",
-          param: "model",
-          code: "model_not_allowed",
-        },
-      });
-    }
-
     const effectiveOutputFormat = request.output_format ?? "png";
     if (effectiveOutputFormat === "png" && request.output_compression !== undefined && request.output_compression !== 100) {
       return invalidRequest(c, "output_compression must be 100 when output_format is png");
@@ -174,8 +158,8 @@ export function createImagesRoutes(
     });
   };
 
-  app.post("/v1/images/generations", apiKeyAuth(accountPool, clientKeyPool), imagesHandler);
-  app.post("/images/generations", apiKeyAuth(accountPool, clientKeyPool), imagesHandler);
+  app.post("/v1/images/generations", apiKeyAuth(accountPool), imagesHandler);
+  app.post("/images/generations", apiKeyAuth(accountPool), imagesHandler);
   return app;
 }
 

@@ -7,7 +7,7 @@ import { loadYaml, loadMergedConfig, applyEnvOverrides } from "./config-loader.j
 import type { AppConfig, FingerprintConfig } from "./config-schema.js";
 
 // Re-export schema, types, and constants so all existing importers keep working
-export { ROTATION_STRATEGIES, ConfigSchema, FingerprintSchema } from "./config-schema.js";
+export { ConfigSchema, FingerprintSchema } from "./config-schema.js";
 export type { AppConfig, FingerprintConfig } from "./config-schema.js";
 
 // ---------------------------------------------------------------------------

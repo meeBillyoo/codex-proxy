@@ -223,10 +223,6 @@ describe("Theme CSS", () => {
         "bg-border-dark\\/50",
         "bg-border-dark\\/60",
         "bg-bg-dark\\/40",
-        "text-text-dim\\/50",
-        "text-text-dim\\/70",
-        "text-text-dim\\/80",
-        "hover\\:bg-border-dark\\/30",
       ]) {
         expect(findRule(variant), `dark:${variant}`).toBeTruthy();
       }

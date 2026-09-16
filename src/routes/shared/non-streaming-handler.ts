@@ -25,7 +25,6 @@ import {
 } from "../../proxy/reasoning-replay-cache.js";
 import { forwardCodexRateLimitHeaders } from "./codex-rate-limit-response-headers.js";
 import { relayCodexTurnState } from "./codex-turn-state.js";
-import { recordClientKeyUsage } from "./proxy-handler-utils.js";
 import { updateLogEntry } from "../../logs/entry.js";
 import { calculateLogMetrics } from "../../logs/metrics.js";
 
@@ -130,8 +129,6 @@ export async function handleNonStreaming(options: HandleNonStreamingOptions): Pr
       if (result.usage) {
         logNonStreamingUsage({ tag: fmt.tag, entryId: currentEntryId, requestId, usage: result.usage });
       }
-      recordClientKeyUsage(c, req.model, result.usage);
-
       const metrics = calculateLogMetrics({
         startMs: initialStartMs,
         endMs: Date.now(),

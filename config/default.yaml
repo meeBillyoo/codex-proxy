@@ -32,15 +32,9 @@ model:
   # in cases where the `instructions` field is overridden by server-injected context.
   system_prompt_strategy: instructions
 auth:
-  jwt_token: null
-  chatgpt_oauth: true
-  refresh_enabled: true
-  refresh_margin_seconds: 300
-  rotation_strategy: least_used
+  max_concurrent_per_account: 3
+  request_interval_ms: 50
   rate_limit_backoff_seconds: 60
-  oauth_client_id: app_EMoamEEZ73f0CkXaXp7hrann
-  oauth_auth_endpoint: https://auth.openai.com/oauth/authorize
-  oauth_token_endpoint: https://auth.openai.com/oauth/token
 server:
   host: 127.0.0.1
   port: 8080
@@ -85,7 +79,6 @@ ollama:
   disable_vision: false
 official_agent:
   enabled: false
-  api_key: null
   app_server_url: ws://127.0.0.1:4500
   request_timeout_ms: 30000
   auth:

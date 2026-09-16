@@ -18,10 +18,10 @@ const mockConfig = {
     suppress_desktop_directives: false,
   },
   auth: {
-    jwt_token: undefined as string | undefined,
-    rotation_strategy: "least_used" as const,
     rate_limit_backoff_seconds: 60,
+    max_concurrent_per_account: 3,
   },
+  quota: { skip_exhausted: true },
 };
 
 vi.mock("@src/config.js", () => ({
@@ -37,13 +37,15 @@ vi.mock("fs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("fs")>();
   return {
     ...actual,
-    readFileSync: vi.fn(() => "models: []"),
+    readFileSync: vi.fn((path: string) => path.endsWith("auth.json")
+      ? JSON.stringify({ tokens: { access_token: "test-token", account_id: "account-test" } })
+      : "models: []"),
     writeFileSync: vi.fn(),
     writeFile: vi.fn(
       (_p: string, _d: string, _e: string, cb: (err: Error | null) => void) =>
         cb(null),
     ),
-    existsSync: vi.fn(() => false),
+    existsSync: vi.fn((path: string) => path.endsWith("auth.json")),
     mkdirSync: vi.fn(),
     renameSync: vi.fn(),
   };
@@ -98,13 +100,19 @@ describe("/v1/responses — optional instructions", () => {
   let app: Hono;
 
   beforeEach(() => {
+    process.env.PROXY_API_KEY = "master-key-123";
     vi.clearAllMocks();
     capturedCodexRequest = null;
     mockConfig.server.proxy_api_key = null;
     loadStaticModels();
     pool = new AccountPool();
-    pool.addAccount("test-token-1");
     app = createResponsesRoutes(pool);
+    const request = app.request.bind(app);
+    app.request = ((input, init) => {
+      const headers = new Headers(init?.headers);
+      headers.set("Authorization", "Bearer master-key-123");
+      return request(input, { ...init, headers });
+    }) as typeof app.request;
   });
 
   afterEach(() => {

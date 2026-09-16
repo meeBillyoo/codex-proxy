@@ -32,19 +32,9 @@ function createConfig(patch: Partial<AppConfig["ollama"]> = {}): AppConfig {
       suppress_desktop_directives: true,
     },
     auth: {
-      jwt_token: null,
-      chatgpt_oauth: true,
-      refresh_margin_seconds: 300,
-      refresh_enabled: true,
-      refresh_concurrency: 2,
       max_concurrent_per_account: 3,
       request_interval_ms: 50,
-      rotation_strategy: "least_used",
-      tier_priority: null,
       rate_limit_backoff_seconds: 60,
-      oauth_client_id: "app",
-      oauth_auth_endpoint: "https://auth.example.test",
-      oauth_token_endpoint: "https://token.example.test",
     },
     server: { host: "127.0.0.1", port: 8080, proxy_api_key: "secret", trust_proxy: false },
     logs: { enabled: false, capacity: 2000, capture_body: false, llm_only: true },
@@ -65,8 +55,6 @@ function createConfig(patch: Partial<AppConfig["ollama"]> = {}): AppConfig {
       disable_vision: false,
       ...patch,
     },
-    providers: { custom: {} },
-    model_routing: {},
   };
 }
 

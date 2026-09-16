@@ -16,9 +16,6 @@ export interface GeneralSettingsData {
   image_host_model_allowed_models: string[];
   default_reasoning_effort: string | null;
   model_aliases: Record<string, string>;
-  refresh_enabled: boolean;
-  refresh_margin_seconds: number;
-  refresh_concurrency: number;
   max_concurrent_per_account: number | null;
   request_interval_ms: number | null;
   auto_update: boolean;
@@ -89,9 +86,6 @@ export function useGeneralSettings(apiKey: string | null) {
         image_host_model_allowed_models: result.image_host_model_allowed_models ?? [],
         default_reasoning_effort: result.default_reasoning_effort,
         model_aliases: result.model_aliases,
-        refresh_enabled: result.refresh_enabled,
-        refresh_margin_seconds: result.refresh_margin_seconds,
-        refresh_concurrency: result.refresh_concurrency,
         max_concurrent_per_account: result.max_concurrent_per_account,
         request_interval_ms: result.request_interval_ms,
         auto_update: result.auto_update,

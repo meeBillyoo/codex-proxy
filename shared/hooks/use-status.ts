@@ -55,7 +55,7 @@ export function selectDefaultModel(catalog: CatalogModel[], ids: string[]): stri
 
 export function useStatus(accountCount: number) {
   const [baseUrl, setBaseUrl] = useState("Loading...");
-  const [apiKey, setApiKey] = useState("Loading...");
+  const [apiKey] = useState("PROXY_API_KEY");
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [modelCatalog, setModelCatalog] = useState<CatalogModel[]>([]);
@@ -106,13 +106,6 @@ export function useStatus(accountCount: number) {
           if (typeof healthData.uptime_seconds === "number" && Number.isFinite(healthData.uptime_seconds)) {
             setUptimeSeconds(Math.max(0, Math.floor(healthData.uptime_seconds)));
           }
-        }
-        const resp = await fetch("/auth/status");
-        if (resp.ok) {
-          const data = await resp.json();
-          setApiKey(data.proxy_api_key || "any-string");
-        } else {
-          setApiKey("any-string");
         }
         const isInitial = isInitialRef.current;
         isInitialRef.current = false;

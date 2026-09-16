@@ -41,14 +41,9 @@ model:
   default_service_tier: null
   suppress_desktop_directives: true
 auth:
-  jwt_token: null
-  chatgpt_oauth: true
-  refresh_margin_seconds: 300
-  rotation_strategy: "least_used"
+  max_concurrent_per_account: 3
+  request_interval_ms: 50
   rate_limit_backoff_seconds: 60
-  oauth_client_id: "app_test"
-  oauth_auth_endpoint: "https://auth.openai.com/oauth/authorize"
-  oauth_token_endpoint: "https://auth.openai.com/oauth/token"
 server:
   host: "0.0.0.0"
   port: 8080
@@ -102,20 +97,6 @@ describe("config", () => {
     const fp = loadFingerprint("/tmp/test-config");
     expect(fp.user_agent_template).toContain("CodexDesktop");
     expect(fp.header_order).toContain("Authorization");
-  });
-
-  it("applies CODEX_JWT_TOKEN env override (valid JWT prefix)", async () => {
-    process.env.CODEX_JWT_TOKEN = "eyJhbGciOiJub25lIn0.eyJleHAiOjk5OTk5OTk5OTl9.";
-    const { loadConfig } = await import("@src/config.js");
-    const config = loadConfig("/tmp/test-config");
-    expect(config.auth.jwt_token).toBe("eyJhbGciOiJub25lIn0.eyJleHAiOjk5OTk5OTk5OTl9.");
-  });
-
-  it("ignores CODEX_JWT_TOKEN without eyJ prefix", async () => {
-    process.env.CODEX_JWT_TOKEN = "not-a-jwt";
-    const { loadConfig } = await import("@src/config.js");
-    const config = loadConfig("/tmp/test-config");
-    expect(config.auth.jwt_token).toBeNull();
   });
 
   it("applies PORT env override", async () => {

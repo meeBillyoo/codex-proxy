@@ -1,7 +1,7 @@
 /**
  * Dashboard Session Store — in-memory session management for web dashboard login gate.
  *
- * Sessions are cookie-based and protect the dashboard when proxy_api_key is set
+ * Sessions are cookie-based and protect the dashboard using PROXY_API_KEY.
  * and requests come from non-localhost origins. TTL is configured via session.ttl_minutes.
  *
  * Sessions are NOT persisted — server restart requires re-login, which is acceptable.

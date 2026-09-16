@@ -16,7 +16,7 @@ vi.mock("@src/paths.js", () => ({
   getDataDir: vi.fn(() => "/fake/data"),
 }));
 
-import { readFileSync, existsSync, writeFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { deepMerge, loadMergedConfig, applyEnvOverrides } from "@src/config-loader.js";
 
 const mockReadFileSync = readFileSync as ReturnType<typeof vi.fn>;
@@ -97,19 +97,6 @@ describe("loadMergedConfig", () => {
     const { raw, local } = loadMergedConfig();
     expect(raw.server).toEqual({ port: 9090, host: "0.0.0.0" });
     expect(local).toEqual({ server: { port: 9090 } });
-  });
-
-  it("creates local.yaml when it does not exist", () => {
-    mockReadFileSync.mockReturnValue("server:\n  port: 8080\n");
-    // First existsSync(localPath) returns false, second returns true after write
-    mockExistsSync.mockReturnValueOnce(false).mockReturnValueOnce(true);
-
-    loadMergedConfig();
-    expect(writeFileSync).toHaveBeenCalledWith(
-      expect.stringContaining("local.yaml"),
-      expect.stringContaining("proxy_api_key"),
-      "utf-8",
-    );
   });
 
   it("applies persisted Codex version state on cold config load", () => {
@@ -317,7 +304,6 @@ describe("applyEnvOverrides", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
-    savedEnv.CODEX_JWT_TOKEN = process.env.CODEX_JWT_TOKEN;
     savedEnv.CODEX_PLATFORM = process.env.CODEX_PLATFORM;
     savedEnv.CODEX_ARCH = process.env.CODEX_ARCH;
     savedEnv.CODEX_PROXY_HOST = process.env.CODEX_PROXY_HOST;
@@ -332,7 +318,6 @@ describe("applyEnvOverrides", () => {
     savedEnv.OLLAMA_BRIDGE_DISABLE_VISION = process.env.OLLAMA_BRIDGE_DISABLE_VISION;
     savedEnv.CORS_ALLOW_NULL_ORIGIN = process.env.CORS_ALLOW_NULL_ORIGIN;
     // Clear
-    delete process.env.CODEX_JWT_TOKEN;
     delete process.env.CODEX_PLATFORM;
     delete process.env.CODEX_ARCH;
     delete process.env.CODEX_PROXY_HOST;
@@ -354,20 +339,6 @@ describe("applyEnvOverrides", () => {
       if (val === undefined) delete process.env[key];
       else process.env[key] = val;
     }
-  });
-
-  it("applies valid JWT from env", () => {
-    process.env.CODEX_JWT_TOKEN = "eyJhbGciOiJSUzI1NiJ9.test";
-    const raw = { auth: { jwt_token: null } } as Record<string, unknown>;
-    applyEnvOverrides(raw, null);
-    expect((raw.auth as Record<string, unknown>).jwt_token).toBe("eyJhbGciOiJSUzI1NiJ9.test");
-  });
-
-  it("ignores JWT that does not start with eyJ", () => {
-    process.env.CODEX_JWT_TOKEN = "not-a-jwt";
-    const raw = { auth: { jwt_token: null } } as Record<string, unknown>;
-    applyEnvOverrides(raw, null);
-    expect((raw.auth as Record<string, unknown>).jwt_token).toBeNull();
   });
 
   it("applies PORT as integer", () => {
@@ -398,7 +369,7 @@ describe("applyEnvOverrides", () => {
 
     applyEnvOverrides(raw, null);
 
-    expect((raw.server as Record<string, unknown>).proxy_api_key).toBe("file-secret");
+    expect((raw.server as Record<string, unknown>).proxy_api_key).toBeUndefined();
   });
 
   it("applies CODEX_PROXY_HOST when local.yaml has no server.host", () => {

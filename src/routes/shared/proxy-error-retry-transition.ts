@@ -70,9 +70,7 @@ export function applyProxyErrorRetryTransition(
     };
   }
 
-  if (decision.releaseBeforeRetry) {
-    releaseAccount(accountPool, entryId, annotateImageGenOutcome(undefined, expectsImageGen), released);
-  }
+  releaseAccount(accountPool, entryId, annotateImageGenOutcome(undefined, expectsImageGen), released);
   restoreImplicitResumeRequest();
   const nextModelRetried = decision.markModelRetried ? true : modelRetried;
 

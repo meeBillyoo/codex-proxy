@@ -2,14 +2,13 @@
  * Dashboard Login Routes — cookie-based authentication for the web dashboard.
  *
  * Provides login/logout/status endpoints that work with the dashboard-auth middleware.
- * Uses the existing proxy_api_key as the dashboard password.
+ * Uses PROXY_API_KEY as the dashboard password.
  */
 
 import { timingSafeEqual } from "crypto";
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { getConfig } from "../config.js";
-import { isLocalhostRequest } from "../utils/is-localhost.js";
 import { getRealClientIp } from "../utils/get-real-client-ip.js";
 import { parseSessionCookie } from "../utils/parse-cookie.js";
 import {
@@ -65,7 +64,7 @@ export function _resetRateLimitForTest(): void {
 export function createDashboardAuthRoutes(): Hono {
   const app = new Hono();
 
-  // POST /auth/dashboard-login — validate proxy_api_key and set session cookie
+  // POST /auth/dashboard-login — validate PROXY_API_KEY and set session cookie
   app.post("/auth/dashboard-login", async (c) => {
     const config = getConfig();
     const remoteAddr = getRealClientIp(c, config.server.trust_proxy) || "unknown";
@@ -90,7 +89,7 @@ export function createDashboardAuthRoutes(): Hono {
       return c.json({ error: "Password is required" });
     }
 
-    const key = config.server.proxy_api_key ?? "";
+    const key = process.env.PROXY_API_KEY?.trim() ?? "";
     const a = Buffer.from(password);
     const b = Buffer.from(key);
     const match = a.length === b.length && timingSafeEqual(a, b);
@@ -121,17 +120,6 @@ export function createDashboardAuthRoutes(): Hono {
   // GET /auth/dashboard-status — check if login is required and current auth state
   app.get("/auth/dashboard-status", (c) => {
     const config = getConfig();
-
-    // No key → no gate required
-    if (!config.server.proxy_api_key) {
-      return c.json({ required: false, authenticated: true });
-    }
-
-    // Localhost → no gate required
-    const remoteAddr = getRealClientIp(c, config.server.trust_proxy);
-    if (isLocalhostRequest(remoteAddr)) {
-      return c.json({ required: false, authenticated: true });
-    }
 
     // Check session
     const sessionId = parseSessionCookie(c.req.header("cookie"));

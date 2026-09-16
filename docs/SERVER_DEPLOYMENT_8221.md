@@ -66,6 +66,16 @@ npm --version
 `node --version` 必须输出 `v24.x.x` 后再继续安装部署。如果服务器已经是 Node.js
 24，可直接复用当前 Node.js，无需强制改用 nvm。
 
+使用将要运行 PM2 任务的同一个系统用户安装并登录 Codex CLI。服务只读取该用户的
+`${CODEX_HOME:-$HOME/.codex}/auth.json`，不会在控制面板中发起 OAuth，也不会复制、
+保存或刷新 token：
+
+```bash
+codex --version
+codex login
+test -f "${CODEX_HOME:-$HOME/.codex}/auth.json"
+```
+
 然后执行：
 
 ```bash
@@ -108,18 +118,9 @@ pm2 start dist/index.js \
 pm2 save
 ```
 
-`pm2 save` 保存当前任务列表。需要开机自动恢复时执行：
-
-```bash
-pm2 startup
-# 按照 pm2 输出的提示，复制并执行它生成的命令
-pm2 save
-```
-
-PM2 的系统启动钩子只负责恢复 PM2 任务列表；`codex-proxy` 的启动、停止、重启和日志
-仍全部由 PM2 管理。如果服务器已有统一的 PM2 开机启动方案，直接复用该方案。不要为
-本应用单独创建 `codex-proxy.service`。未配置开机启动时，服务器重启后可手动执行
-`pm2 resurrect` 恢复任务。
+`pm2 save` 保存当前任务列表。本项目不创建 systemd 服务，也不执行 `pm2 startup`。
+服务器重启后，由现有的 PM2 运维机制恢复任务；如果没有统一的开机调度，登录服务器后
+手动执行 `pm2 resurrect`。
 
 ## 日常运维
 
@@ -196,7 +197,7 @@ fi
 pm2 save
 ```
 
-## 首次登录上游账号
+## Codex CLI 账号
 
 部署完成后打开：
 
@@ -204,7 +205,21 @@ pm2 save
 http://34.28.243.240:8221/
 ```
 
-先使用 `.env` 中的 `PROXY_API_KEY` 登录控制面板，然后完成 OpenAI/ChatGPT OAuth 登录。只有账号池中至少存在一个有效账号后，服务才能刷新完整模型列表并真正调用 `gpt-5.6-sol`。
+使用 `.env` 中的 `PROXY_API_KEY` 登录控制面板。页面显示的是 PM2 运行用户当前的
+Codex CLI 账号；不能在页面中添加、删除或切换账号。
+
+如果在服务启动后执行了 `codex login`、重新登录或切换认证文件，可重启任务：
+
+```bash
+pm2 restart codex-proxy --update-env
+```
+
+也可以在不重启进程的情况下重新加载：
+
+```bash
+curl -fsS -X POST http://127.0.0.1:8221/auth/reload \
+  -H "Authorization: Bearer $API_KEY"
+```
 
 ## 验证
 
@@ -255,13 +270,12 @@ http://34.28.243.240:8221/v1
 
 如果服务器本机验证成功但外部连接超时，需要在云平台防火墙中放行 TCP `8221`。生产环境建议仅允许可信来源 IP，并在公网入口前增加 HTTPS 反向代理。
 
-## 2026-09-16 部署验收记录
+## 验收清单
 
-- PM2 任务 `codex-proxy`：`online`
-- `0.0.0.0:8221`：监听成功
-- 外部地址 `http://34.28.243.240:8221/health`：HTTP `200`
-- `/v1/models` 不携带 Key：HTTP `401`
-- `/v1/models` 携带正确 Key：HTTP `200`
-- 当前账号池：`0` 个账号，`authenticated=false`
-- 当前静态模型列表不包含 `gpt-5.6-sol`
-- `gpt-5.6-sol` 调用：HTTP `401`，原因是尚未登录上游账号；完成控制面板 OAuth 后需要重新执行验证命令
+- PM2 任务 `codex-proxy` 为 `online`。
+- `0.0.0.0:8221` 监听成功。
+- `/health` 返回 HTTP `200` 且 `authenticated=true`。
+- `/v1/models` 不携带 Key 返回 HTTP `401`。
+- `/v1/models` 携带正确 Key 返回 HTTP `200`。
+- `/auth/account` 只返回当前 CLI 账号信息，不包含任何 token。
+- `gpt-5.6-sol` 实际调用成功。

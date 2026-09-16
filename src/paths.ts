@@ -41,7 +41,7 @@ export function getConfigDir(): string {
 
 /** Directory for runtime data (accounts.json, cookies.json, etc.). */
 export function getDataDir(): string {
-  return _paths?.dataDir ?? resolve(process.cwd(), "data");
+  return _paths?.dataDir ?? process.env.CODEX_PROXY_DATA_DIR ?? resolve(process.cwd(), "data");
 }
 
 /** Directory for curl-impersonate binaries. */

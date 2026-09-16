@@ -1,15 +1,12 @@
 /**
  * Dashboard Auth Middleware — cookie-based login gate for the web dashboard.
  *
- * When proxy_api_key is configured and the request originates from a non-localhost
- * address, require a valid _codex_session cookie. Protects dashboard data endpoints
+ * Requires a valid _codex_session cookie for dashboard data endpoints
  * while allowing: static assets, health, API routes, login endpoints, and HTML shell.
  */
 
 import type { Context, Next } from "hono";
 import { getConfig } from "../config.js";
-import { isLocalhostRequest } from "../utils/is-localhost.js";
-import { getRealClientIp } from "../utils/get-real-client-ip.js";
 import { validateSession } from "../auth/dashboard-session.js";
 import { parseSessionCookie } from "../utils/parse-cookie.js";
 
@@ -36,17 +33,13 @@ const ALLOWED_GET_EXACT = new Set(["/"]);
 export async function dashboardAuth(c: Context, next: Next): Promise<Response | void> {
   const config = getConfig();
 
-  // No key configured → no gate
-  if (!config.server.proxy_api_key) return next();
-
-  // Localhost → bypass (Electron + local dev)
-  const remoteAddr = getRealClientIp(c, config.server.trust_proxy);
-  if (isLocalhostRequest(remoteAddr)) return next();
-
   // Bearer token → bypass (API scripts)
   const authHeader = c.req.header("Authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-  if (token === config.server.proxy_api_key) return next();
+  if (token && token === process.env.PROXY_API_KEY?.trim()) {
+    c.set("authRole", "master");
+    return next();
+  }
 
   // Always-allowed paths
   const path = c.req.path;
@@ -57,6 +50,7 @@ export async function dashboardAuth(c: Context, next: Next): Promise<Response | 
   // Check session cookie
   const sessionId = parseSessionCookie(c.req.header("cookie"));
   if (sessionId && validateSession(sessionId)) {
+    c.set("authRole", "master");
     // Sliding window: refresh cookie Max-Age to stay in sync with server-side renewal
     const maxAge = config.session.ttl_minutes * 60;
     const secure = isHttps(c);

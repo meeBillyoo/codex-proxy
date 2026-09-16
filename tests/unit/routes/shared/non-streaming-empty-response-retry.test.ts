@@ -168,7 +168,7 @@ describe("retryNonStreamingEmptyResponse", () => {
     expect(result).toEqual({
       action: "respond",
       status: 502,
-      message: "Codex returned an empty response and no other accounts are available for retry",
+      message: "Codex returned an empty response and the current CLI account is unavailable for retry",
     });
     expect(pool.recordEmptyResponse).toHaveBeenCalledWith("entry-1");
     expect(pool.release).toHaveBeenCalledWith("entry-1", { input_tokens: 1, output_tokens: 0 });

@@ -1,7 +1,7 @@
 /**
  * POST /v1/images/generations 的集成测试。
  *
- * 只替换外部传输边界；账号池、CodexApi、共享 proxy-handler 和 Images 转换
+ * 只替换外部传输边界；当前 CLI 账号、CodexApi、共享 proxy-handler 和 Images 转换
  * 均运行真实实现。
  */
 
@@ -15,7 +15,6 @@ import {
   makeErrorTransportResponse,
 } from "@helpers/e2e-setup.js";
 import { buildImageGenStreamChunks, buildTextStreamChunks, sseChunk } from "@helpers/sse.js";
-import { createValidJwt } from "@helpers/jwt.js";
 
 import { getConfig } from "@src/config.js";
 import { Hono } from "hono";
@@ -23,54 +22,35 @@ import { requestId } from "@src/middleware/request-id.js";
 import { errorHandler } from "@src/middleware/error-handler.js";
 import { createImagesRoutes } from "@src/routes/images.js";
 import { AccountPool } from "@src/auth/account-pool.js";
-import { ClientKeyPool } from "@src/auth/client-key-pool.js";
-import { ClientKeyPersistence } from "@src/auth/client-key-persistence.js";
 import { CookieJar } from "@src/proxy/cookie-jar.js";
 import { ProxyPool } from "@src/proxy/proxy-pool.js";
 import { loadStaticModels } from "@src/models/model-store.js";
-import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
 
 interface TestContext {
   app: Hono;
   accountPool: AccountPool;
   cookieJar: CookieJar;
   proxyPool: ProxyPool;
-  clientKeyPool: ClientKeyPool;
-  tempDir: string;
 }
 
 let ctx: TestContext;
 
-function buildApp(opts?: { noAccount?: boolean; clientKeyPool?: ClientKeyPool }): TestContext {
+function buildApp(opts?: { noAccount?: boolean }): TestContext {
   loadStaticModels();
   const accountPool = new AccountPool();
   const cookieJar = new CookieJar();
   const proxyPool = new ProxyPool();
-  const tempDir = mkdtempSync(join(tmpdir(), "client-key-images-e2e-"));
-  const persistence = new ClientKeyPersistence(
-    join(tempDir, "client-keys.sqlite"),
-    join(tempDir, "client-keys.json"),
-  );
-  const clientKeyPool = opts?.clientKeyPool ?? new ClientKeyPool(persistence, () => getConfig().server.proxy_api_key);
-
-  if (!opts?.noAccount) {
-    accountPool.addAccount(createValidJwt({
-      accountId: "acct-e2e-images",
-      email: "images@test.com",
-      planType: "plus",
-    }));
-  }
+  if (opts?.noAccount) vi.spyOn(accountPool, "isAuthenticated").mockReturnValue(false);
 
   const app = new Hono();
   app.use("*", requestId);
   app.onError(errorHandler);
-  app.route("/", createImagesRoutes(accountPool, cookieJar, proxyPool, clientKeyPool));
-  return { app, accountPool, cookieJar, proxyPool, clientKeyPool, tempDir };
+  app.route("/", createImagesRoutes(accountPool, cookieJar, proxyPool));
+  return { app, accountPool, cookieJar, proxyPool };
 }
 
 beforeEach(() => {
+  process.env.PROXY_API_KEY = "master-key-123";
   resetTransportState();
   (getConfig().server as { proxy_api_key: string | null }).proxy_api_key = null;
   (getConfig().model as { image_host_model: string }).image_host_model = "gpt-5.5";
@@ -92,17 +72,12 @@ afterEach(() => {
   ctx.cookieJar.destroy();
   ctx.proxyPool.destroy();
   ctx.accountPool.destroy();
-  try {
-    rmSync(ctx.tempDir, { recursive: true, force: true });
-  } catch {
-    // cleanup
-  }
 });
 
 function imagesRequest(body: unknown, app = ctx.app): Promise<Response> {
   return app.request("/v1/images/generations", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
     body: JSON.stringify(body),
   });
 }
@@ -418,7 +393,7 @@ describe("POST /v1/images/generations", () => {
   });
 
   it("enforces the configured proxy API key", async () => {
-    (getConfig().server as { proxy_api_key: string | null }).proxy_api_key = "images-secret";
+    process.env.PROXY_API_KEY = "images-secret";
 
     const missing = await imagesRequest({ model: "gpt-image-2", prompt: "a red circle" });
     expect(missing.status).toBe(401);
@@ -440,7 +415,7 @@ describe("POST /v1/images/generations", () => {
   it("handles requests on the /images/generations route alias", async () => {
     const res = await ctx.app.request("/images/generations", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
       body: JSON.stringify({ model: "gpt-image-2", prompt: "a red circle" }),
     });
 
@@ -449,84 +424,4 @@ describe("POST /v1/images/generations", () => {
     expect(body.data[0]?.b64_json).toBe("ZmFrZS1pbWFnZQ==");
   });
 
-  it("authenticates valid client key when proxy API key is configured", async () => {
-    (getConfig().server as { proxy_api_key: string | null }).proxy_api_key = "master-secret";
-    const clientKey = ctx.clientKeyPool.createKey({ name: "test-client" });
-
-    const res = await ctx.app.request("/v1/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${clientKey.key}`,
-      },
-      body: JSON.stringify({ model: "gpt-image-2", prompt: "a red circle" }),
-    });
-
-    expect(res.status).toBe(200);
-    const body = await res.json() as { data: Array<{ b64_json: string }> };
-    expect(body.data[0]?.b64_json).toBe("ZmFrZS1pbWFnZQ==");
-  });
-
-  it("enforces allowed_models on client keys", async () => {
-    (getConfig().server as { proxy_api_key: string | null }).proxy_api_key = "master-secret";
-    const disallowedKey = ctx.clientKeyPool.createKey({
-      name: "restricted-client",
-      allowed_models: ["gpt-4o"],
-    });
-
-    const forbiddenRes = await ctx.app.request("/v1/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${disallowedKey.key}`,
-      },
-      body: JSON.stringify({ model: "gpt-image-2", prompt: "a red circle" }),
-    });
-
-    expect(forbiddenRes.status).toBe(403);
-    const forbiddenBody = await forbiddenRes.json() as { error: { code: string } };
-    expect(forbiddenBody.error.code).toBe("model_not_allowed");
-
-    const allowedKey = ctx.clientKeyPool.createKey({
-      name: "images-client",
-      allowed_models: ["gpt-image-2"],
-    });
-
-    const allowedRes = await ctx.app.request("/v1/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${allowedKey.key}`,
-      },
-      body: JSON.stringify({ model: "gpt-image-2", prompt: "a red circle" }),
-    });
-
-    expect(allowedRes.status).toBe(200);
-  });
-
-  it("enforces concurrency limits on client keys", async () => {
-    (getConfig().server as { proxy_api_key: string | null }).proxy_api_key = "master-secret";
-    const clientKey = ctx.clientKeyPool.createKey({
-      name: "concurrency-client",
-      max_concurrency: 1,
-    });
-
-    // Acquire the only slot
-    expect(ctx.clientKeyPool.acquireSlot(clientKey.id)).toBe(true);
-
-    const res = await ctx.app.request("/v1/images/generations", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${clientKey.key}`,
-      },
-      body: JSON.stringify({ model: "gpt-image-2", prompt: "a red circle" }),
-    });
-
-    expect(res.status).toBe(429);
-    const body = await res.json() as { error: { code: string } };
-    expect(body.error.code).toBe("concurrency_limit_exceeded");
-
-    ctx.clientKeyPool.releaseSlot(clientKey.id);
-  });
 });

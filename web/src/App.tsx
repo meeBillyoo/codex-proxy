@@ -5,29 +5,20 @@ import { I18nProvider } from "../../shared/i18n/context";
 import { ThemeProvider } from "../../shared/theme/context";
 import { Header } from "./components/Header";
 import { UpdateModal } from "./components/UpdateModal";
-import { AddAccount } from "./components/AddAccount";
-import { AccountList } from "./components/AccountList";
-import { PoolOverview } from "./components/PoolOverview";
+import { CodexAccountCard } from "./components/CodexAccountCard";
 import { SettingsTab } from "./components/SettingsTab";
-import { ProxyPool } from "./components/ProxyPool";
 import { Footer } from "./components/Footer";
 import { Sidebar } from "./components/Sidebar";
-import { ApiKeyManager } from "./components/ApiKeyManager";
-import { ProxySettings } from "./pages/ProxySettings";
-import { AccountManagement } from "./pages/AccountManagement";
 import { UsageStats } from "./pages/UsageStats";
 import { LogsPage } from "./pages/LogsPage";
 import { ErrorsPage } from "./pages/ErrorsPage";
-import { ClientKeysPage } from "./pages/ClientKeysPage";
 import { InfoPage } from "./pages/InfoPage";
 import { useAccounts } from "../../shared/hooks/use-accounts";
 import { useErrorLogsCount } from "../../shared/hooks/use-error-logs";
-import { useProxies } from "../../shared/hooks/use-proxies";
 import { useStatus } from "../../shared/hooks/use-status";
 import { useUpdateStatus } from "../../shared/hooks/use-update-status";
 import { useI18n, useT } from "../../shared/i18n/context";
 import { useDashboardAuth } from "../../shared/hooks/use-dashboard-auth";
-import { useGeneralSettings } from "../../shared/hooks/use-general-settings";
 import { getShowUpdateDialogPreference, shouldAutoOpenUpdateModal } from "./update-modal-policy";
 import { getLayoutMode, saveLayoutMode, type LayoutMode } from "./lib/layout-preferences";
 import { NAV_ITEMS } from "./navigation";
@@ -96,9 +87,7 @@ export function TabBar({ activeHash }: { activeHash: string }) {
 
 function Dashboard() {
   const accounts = useAccounts();
-  const proxies = useProxies();
   const status = useStatus(accounts.list.length);
-  const generalSettings = useGeneralSettings(null);
   const update = useUpdateMessage();
   const { onLogout } = useDashboardAuthCtx();
   const [showModal, setShowModal] = useState(false);
@@ -125,15 +114,6 @@ function Dashboard() {
     prevUpdateAvailable.current = update.hasUpdate;
   }, [update.hasUpdate, update.proxyUpdateInfo?.mode, update.showUpdateDialog]);
 
-  const handleProxyChange = async (accountId: string, proxyId: string) => {
-    accounts.patchLocal(accountId, { proxyId });
-    await proxies.assignProxy(accountId, proxyId);
-  };
-
-  // Redirect legacy routes
-  if (hash === "#/account-management") { location.hash = "#/accounts"; return null; }
-  if (hash === "#/proxy-settings") { location.hash = "#/proxies"; return null; }
-
   const activeTab = TABS.find((t) => t.hash === hash)?.hash ?? "";
 
   const isSidebarLayout = layoutMode === "sidebar";
@@ -144,7 +124,6 @@ function Dashboard() {
       {isSidebarLayout && <Sidebar activeHash={activeTab} unreadErrors={visibleErrorCount} uptimeSeconds={status.uptimeSeconds} mobileOpen={mobileSidebarOpen} onMobileClose={() => setMobileSidebarOpen(false)} />}
       <div class={`min-h-screen min-w-0 flex flex-1 flex-col ${isSidebarLayout ? "lg:pl-60" : ""}`}>
       <Header
-        onAddAccount={accounts.startAdd}
         onCheckUpdate={update.checkForUpdate}
         onOpenUpdateModal={() => setShowModal(true)}
         checking={update.checking}
@@ -161,65 +140,19 @@ function Dashboard() {
 
       <main class={`flex-1 px-4 py-6 md:px-8 md:py-8 ${isSidebarLayout ? "lg:px-8 xl:px-10" : "lg:px-40"} flex justify-center`}>
         <div class={`flex w-full flex-col ${isSidebarLayout ? "max-w-[1320px]" : "max-w-[960px]"}`}>
-          <AddAccount
-            visible={accounts.addVisible}
-            onCancel={accounts.cancelAdd}
-            onSubmitRelay={accounts.submitRelay}
-            onAddByRefreshToken={accounts.addByRefreshToken}
-            addInfo={accounts.addInfo}
-            addError={accounts.addError}
-            authUrl={accounts.addAuthUrl}
-            fallbackConfigured={!!accounts.fallbackUpstream}
-            onAddFallbackUpstream={accounts.addFallbackUpstream}
-          />
-
           {!isSidebarLayout && <TabBar activeHash={activeTab} />}
 
           {activeTab === "" && (
             <div class="flex flex-col gap-6">
-              <PoolOverview
-                accounts={accounts.list}
-                creditsPerUsd={generalSettings.data?.credits_per_usd}
-              />
-              <AccountList
-                accounts={accounts.list}
+              <CodexAccountCard
+                account={accounts.account}
+                authFile={accounts.authFile}
                 loading={accounts.loading}
-                onDelete={accounts.deleteAccount}
-                onRefresh={accounts.refresh}
                 refreshing={accounts.refreshing}
                 lastUpdated={accounts.lastUpdated}
-                proxies={proxies.proxies}
-                onProxyChange={handleProxyChange}
-                onExport={accounts.exportAccounts}
-                onImport={accounts.importAccounts}
-                onToggleStatus={accounts.toggleStatus}
-                onUpdateLabel={accounts.updateLabel}
-                onUpdateCodexFingerprintMode={accounts.updateCodexFingerprintMode}
-                fallbackUpstream={accounts.fallbackUpstream}
-                fallbackActive={accounts.fallbackActive}
-                onUpdateFallbackUpstream={accounts.updateFallbackUpstream}
-                onDeleteFallbackUpstream={accounts.deleteFallbackUpstream}
+                error={accounts.error}
+                onReload={accounts.reload}
               />
-              <ProxyPool proxies={proxies} />
-            </div>
-          )}
-
-          {activeTab === "#/accounts" && (
-            <AccountManagement embedded />
-          )}
-
-          {activeTab === "#/client-keys" && (
-            <ClientKeysPage masterApiKey={status.apiKey} />
-          )}
-
-          {activeTab === "#/api-keys" && (
-            <ApiKeyManager />
-          )}
-
-          {activeTab === "#/proxies" && (
-            <div class="flex flex-col gap-6">
-              <ProxyPool proxies={proxies} />
-              <ProxySettings embedded />
             </div>
           )}
 

@@ -25,12 +25,7 @@ import { getModelCatalog } from "../models/model-store.js";
 import {
   handleProxyRequest,
 } from "./shared/proxy-handler.js";
-import { handleDirectRequest } from "./shared/direct-request-handler.js";
 import type { FormatAdapter, ProxyRequest } from "./shared/proxy-handler-types.js";
-import type { UpstreamRouter } from "../proxy/upstream-router.js";
-import type { ClientKeyPool } from "../auth/client-key-pool.js";
-import type { FallbackUpstreamStore } from "../auth/fallback-upstream.js";
-import { validateClientKeyModel } from "./shared/proxy-handler-utils.js";
 import { extractProxyApiKey } from "../utils/extract-api-key.js";
 import { resolveDefaultTools, mergeDefaultTools } from "./shared/default-tools.js";
 import { isRecord } from "../translation/shared-utils.js";
@@ -86,14 +81,11 @@ export function createGeminiRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
   proxyPool?: ProxyPool,
-  upstreamRouter?: UpstreamRouter,
-  clientKeyPool?: ClientKeyPool,
-  fallbackUpstream?: FallbackUpstreamStore,
 ): Hono {
   const app = new Hono();
 
   // Handle both generateContent and streamGenerateContent
-  app.post("/v1beta/models/:modelAction", apiKeyAuth(accountPool, clientKeyPool), async (c) => {
+  app.post("/v1beta/models/:modelAction", apiKeyAuth(accountPool), async (c) => {
     const modelActionParam = c.req.param("modelAction");
     const parsedAction = parseModelAction(modelActionParam);
 
@@ -113,17 +105,7 @@ export function createGeminiRoutes(
 
     const { model: geminiModel, action } = parsedAction;
 
-    const modelCheck = validateClientKeyModel(c, geminiModel);
-    if (!modelCheck.allowed) {
-      c.status(403);
-      return c.json(makeError(403, "PERMISSION_DENIED", modelCheck.message || "Model not allowed"));
-    }
-
-    const routeMatch = upstreamRouter?.resolveMatch(geminiModel);
-    const allowUnauthenticated = routeMatch?.kind === "api-key" || routeMatch?.kind === "adapter";
-
-    // Auth check (a configured fallback upstream apikey is a valid last-resort).
-    if (!allowUnauthenticated && !accountPool.isAuthenticated() && !fallbackUpstream?.isConfigured()) {
+    if (!accountPool.isAuthenticated()) {
       c.status(401);
       return c.json(
         makeError(
@@ -148,7 +130,7 @@ export function createGeminiRoutes(
       );
     }
 
-    const defaultTools = resolveDefaultTools(c, { allowUnauthenticated });
+    const defaultTools = resolveDefaultTools(c, { allowUnauthenticated: false });
     const { codexRequest, tupleSchema } = translateGeminiToCodexRequest(
       parsed.data,
       geminiModel,
@@ -175,29 +157,12 @@ export function createGeminiRoutes(
         && codexRequest.tools.some((tool) => isRecord(tool) && tool.type === "image_generation"),
     };
 
-    if (routeMatch?.kind === "api-key" || routeMatch?.kind === "adapter") {
-      const directModel = routeMatch.resolvedModel ?? geminiModel;
-      const directReq = {
-        ...proxyReq,
-        model: directModel,
-        codexRequest: { ...codexRequest, model: directModel },
-      };
-      return handleDirectRequest({ c, upstream: routeMatch.adapter, req: directReq, fmt: GEMINI_FORMAT });
-    }
-
-    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: GEMINI_FORMAT, proxyPool, fallbackUpstream });
+    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: GEMINI_FORMAT, proxyPool });
   });
 
   // List available models (Gemini format)
-  app.get("/v1beta/models", apiKeyAuth(accountPool, clientKeyPool), (c) => {
-    let catalog = getModelCatalog();
-    const token = extractProxyApiKey(c);
-    if (token && clientKeyPool) {
-      const clientKey = clientKeyPool.getByKey(token);
-      if (clientKey?.allowed_models && clientKey.allowed_models.length > 0) {
-        catalog = catalog.filter((m) => clientKey.allowed_models!.includes(m.id));
-      }
-    }
+  app.get("/v1beta/models", apiKeyAuth(accountPool), (c) => {
+    const catalog = getModelCatalog();
 
     const models = catalog.map((m) => ({
       name: `models/${m.id}`,

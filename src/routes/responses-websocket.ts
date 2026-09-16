@@ -24,8 +24,6 @@ import type { Server, IncomingMessage } from "http";
 import type { Duplex } from "stream";
 import type { Hono } from "hono";
 import type { AccountPool } from "../auth/account-pool.js";
-import type { ClientKeyPool } from "../auth/client-key-pool.js";
-import { getConfig } from "../config.js";
 import { parseSSEStream } from "../proxy/codex-sse.js";
 
 /** The only path this server accepts upgrades for. */
@@ -62,14 +60,12 @@ export interface ResponsesWebSocketServerOptions {
   /** The mounted Hono app exposing `/v1/responses` (POST). Frames are re-dispatched here. */
   app: Hono;
   accountPool: AccountPool;
-  clientKeyPool?: ClientKeyPool;
 }
 
 export class ResponsesWebSocketServer {
   private readonly server: Server;
   private readonly app: Hono;
   private readonly accountPool: AccountPool;
-  private readonly clientKeyPool?: ClientKeyPool;
   private readonly wss: WebSocketServer;
   private readonly onUpgradeBound: (req: IncomingMessage, socket: Duplex, head: Buffer) => void;
   private closed = false;
@@ -78,7 +74,6 @@ export class ResponsesWebSocketServer {
     this.server = options.server;
     this.app = options.app;
     this.accountPool = options.accountPool;
-    this.clientKeyPool = options.clientKeyPool;
 
     this.wss = new WebSocketServer({ noServer: true });
     this.wss.on("connection", (ws, req) => this.handleConnection(ws, req));
@@ -167,24 +162,6 @@ export class ResponsesWebSocketServer {
   private authorize(req: IncomingMessage): { allowed: boolean; statusCode: number; message: string } {
     const key = this.extractProxyApiKey(req);
     if (key && this.accountPool.validateProxyApiKey(key)) {
-      return { allowed: true, statusCode: 0, message: "" };
-    }
-    if (key && this.clientKeyPool) {
-      // Reuse the HTTP middleware's validation so disabled, expired, over-budget,
-      // or token-limited client keys are rejected at the handshake, not later.
-      const validation = this.clientKeyPool.validateAccess(key);
-      if (validation.allowed) {
-        return { allowed: true, statusCode: 0, message: "" };
-      }
-      return {
-        allowed: false,
-        statusCode: validation.statusCode ?? 401,
-        message: validation.message ?? "Unauthorized",
-      };
-    }
-    // Passthrough / no-auth mode: no master proxy_api_key is configured.
-    const config = getConfig();
-    if (!config?.server?.proxy_api_key) {
       return { allowed: true, statusCode: 0, message: "" };
     }
     return { allowed: false, statusCode: 401, message: "Invalid proxy API key" };

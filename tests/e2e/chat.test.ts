@@ -28,7 +28,6 @@ import {
   buildImageGenStreamChunks,
   sseChunk,
 } from "@helpers/sse.js";
-import { createValidJwt } from "@helpers/jwt.js";
 
 import { Hono } from "hono";
 import { requestId } from "@src/middleware/request-id.js";
@@ -56,13 +55,7 @@ function buildApp(opts?: { noAccount?: boolean }): TestContext {
   const cookieJar = new CookieJar();
   const proxyPool = new ProxyPool();
 
-  if (!opts?.noAccount) {
-    accountPool.addAccount(createValidJwt({
-      accountId: "acct-e2e-chat",
-      email: "chat@test.com",
-      planType: "plus",
-    }));
-  }
+  if (opts?.noAccount) vi.spyOn(accountPool, "isAuthenticated").mockReturnValue(false);
 
   const app = new Hono();
   app.use("*", requestId);
@@ -75,6 +68,7 @@ function buildApp(opts?: { noAccount?: boolean }): TestContext {
 }
 
 beforeEach(() => {
+  process.env.PROXY_API_KEY = "master-key-123";
   resetTransportState();
   setTransportPost(async () =>
     makeTransportResponse(buildTextStreamChunks("resp_chat_1", "Hello from chat!")),
@@ -92,7 +86,7 @@ afterEach(() => {
 function chatRequest(body: unknown) {
   return ctx.app.request("/v1/chat/completions", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
     body: JSON.stringify(body),
   });
 }
@@ -419,7 +413,7 @@ describe("E2E: POST /v1/chat/completions", () => {
     try {
       const res = await noAuth.app.request("/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
         body: JSON.stringify(defaultBody()),
       });
       expect(res.status).toBe(401);
@@ -438,7 +432,7 @@ describe("E2E: POST /v1/chat/completions", () => {
   it("invalid JSON: returns 400 invalid_json", async () => {
     const res = await ctx.app.request("/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
       body: "not valid json{{{",
     });
     expect(res.status).toBe(400);

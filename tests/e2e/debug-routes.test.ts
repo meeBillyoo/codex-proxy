@@ -28,10 +28,10 @@ vi.mock("@src/config.js", () => ({
     model: { default: "gpt-5.4" },
     server: { proxy_api_key: null },
     auth: {
-      jwt_token: null,
-      rotation_strategy: "least_used",
       rate_limit_backoff_seconds: 60,
+      max_concurrent_per_account: 3,
     },
+    quota: { skip_exhausted: true },
   })),
   getFingerprint: vi.fn(() => ({
     user_agent_template: "Codex/{version} ({platform}; {arch})",
@@ -50,8 +50,11 @@ vi.mock("@src/paths.js", () => ({
 }));
 
 vi.mock("fs", () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => ""),
+  existsSync: vi.fn(() => true),
+  readFileSync: vi.fn(() => JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: { access_token: "test-token", account_id: "acct-test" },
+  })),
   writeFileSync: vi.fn(),
   renameSync: vi.fn(),
   mkdirSync: vi.fn(),
@@ -124,7 +127,6 @@ afterAll(() => {
 
 describe("GET /health", () => {
   it("returns pool capacity without removing existing pool fields", async () => {
-    pool.addAccount("token-health");
     const acquired = pool.acquire({});
     expect(acquired).not.toBeNull();
 

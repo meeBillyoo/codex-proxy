@@ -50,14 +50,14 @@ describe("installFetchInterceptor", () => {
     });
 
     installFetchInterceptor();
-    await window.fetch("/auth/accounts");
+    await window.fetch("/auth/account");
 
     expect(eventHandler).toHaveBeenCalled();
     const event = eventHandler.mock.calls[0][0] as Event;
     expect(event.type).toBe(AUTH_EXPIRED_EVENT);
   });
 
-  it("does not dispatch auth-expired when /auth/api-keys/models returns 401 without dashboard-auth header", async () => {
+  it("does not dispatch auth-expired when an API route returns 401 without dashboard-auth header", async () => {
     const { installFetchInterceptor } = await import("./use-dashboard-auth.js");
     const eventHandler = vi.fn();
     const mockOriginalFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Failed to fetch models: unauthorized" }), {
@@ -74,7 +74,7 @@ describe("installFetchInterceptor", () => {
     });
 
     installFetchInterceptor();
-    await window.fetch("/auth/api-keys/models");
+    await window.fetch("/v1/models");
 
     expect(eventHandler).not.toHaveBeenCalled();
   });

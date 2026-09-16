@@ -10,10 +10,6 @@ export interface NavItem {
 
 export const NAV_ITEMS: NavItem[] = [
   { hash: "", label: "overview", icon: "home" },
-  { hash: "#/accounts", label: "manageAccounts", icon: "users" },
-  { hash: "#/client-keys", label: "clientKeys", icon: "key" },
-  { hash: "#/api-keys", label: "apiKeys", icon: "api" },
-  { hash: "#/proxies", label: "proxySettings", icon: "route" },
   { hash: "#/usage-stats", label: "usageStats", icon: "chart" },
   { hash: "#/logs", label: "logs", icon: "document" },
   { hash: "#/errors", label: "errorsTab", icon: "alert" },

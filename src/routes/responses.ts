@@ -2,8 +2,7 @@
  * POST /v1/responses — Codex Responses API passthrough.
  *
  * Accepts the native Codex Responses API format and streams raw SSE events
- * back to the client without translation. Provides multi-account load balancing,
- * retry logic, and usage tracking via the shared proxy handler.
+ * back to the client without translation through the current Codex CLI account.
  */
 
 import { Hono, type Context } from "hono";
@@ -22,11 +21,6 @@ import { errorHandler } from "../middleware/error-handler.js";
 import { prepareSchema, isRecord } from "../translation/shared-utils.js";
 import { parseModelName, resolveModelId, buildDisplayModelName, isRequestableModel } from "../models/model-store.js";
 import { handleProxyRequest } from "./shared/proxy-handler.js";
-import { handleDirectRequest } from "./shared/direct-request-handler.js";
-import type { UpstreamRouter } from "../proxy/upstream-router.js";
-import type { ClientKeyPool } from "../auth/client-key-pool.js";
-import type { FallbackUpstreamStore } from "../auth/fallback-upstream.js";
-import { validateClientKeyModel, recordClientKeyUsage } from "./shared/proxy-handler-utils.js";
 import {
   extractOpenAISubagentFromMetadata,
   normalizeOpenAISubagent,
@@ -35,11 +29,6 @@ import {
 } from "../proxy/openai-subagent.js";
 import { PASSTHROUGH_FORMAT } from "./responses-passthrough.js";
 import { handleCompact } from "./responses-compact.js";
-import { handleCodexAuxiliaryJson } from "./codex-auxiliary.js";
-import {
-  supportsCodexAuxiliaryJson,
-  type CodexAuxiliaryJsonPath,
-} from "../proxy/upstream-adapter.js";
 import { resolveDefaultTools, mergeDefaultTools } from "./shared/default-tools.js";
 
 // Re-export for downstream consumers
@@ -68,8 +57,8 @@ function firstHeaderOrMetadata(
 
 // ── Auth check ────────────────────────────────────────────────────
 
-function checkAuth(c: Context, accountPool: AccountPool, allowUnauthenticated: boolean, fallbackConfigured?: boolean): Response | null {
-  if (!allowUnauthenticated && !accountPool.isAuthenticated() && !fallbackConfigured) {
+function checkAuth(c: Context, accountPool: AccountPool): Response | null {
+  if (!accountPool.isAuthenticated()) {
     c.status(401);
     return c.json({
       type: "error",
@@ -104,9 +93,6 @@ export function createResponsesRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
   proxyPool?: ProxyPool,
-  upstreamRouter?: UpstreamRouter,
-  clientKeyPool?: ClientKeyPool,
-  fallbackUpstream?: FallbackUpstreamStore,
 ): Hono {
   const app = new Hono();
   // Register errorHandler locally so that when testing this router in isolation (e.g. unit tests),
@@ -121,26 +107,7 @@ export function createResponsesRoutes(
 
     const rawModel = typeof body.model === "string" ? body.model : "codex";
 
-    const modelCheck = validateClientKeyModel(c, rawModel);
-    if (!modelCheck.allowed) {
-      c.status(403);
-      return c.json({
-        type: "error",
-        error: {
-          type: "invalid_request_error",
-          code: "model_not_allowed",
-          message: modelCheck.message,
-          param: "model",
-        },
-      });
-    }
-
-    const routeMatch = upstreamRouter?.resolveMatch(rawModel)
-      ?? (isRequestableModel(rawModel)
-        ? { kind: "codex" as const }
-        : { kind: "not-found" as const });
-
-    if (routeMatch.kind === "not-found") {
+    if (!isRequestableModel(rawModel)) {
       c.status(404);
       return c.json({
         type: "error",
@@ -153,10 +120,7 @@ export function createResponsesRoutes(
       });
     }
 
-    const allowUnauthenticated = routeMatch.kind === "api-key" || routeMatch.kind === "adapter";
-    // A configured fallback upstream apikey also satisfies the guard, since the
-    // proxy handler will route through it as a last-resort.
-    const authErr = checkAuth(c, accountPool, allowUnauthenticated, fallbackUpstream?.isConfigured());
+    const authErr = checkAuth(c, accountPool);
     if (authErr) return authErr;
 
     const config = getConfig();
@@ -241,7 +205,7 @@ export function createResponsesRoutes(
       codexRequest.service_tier = serviceTier;
     }
 
-    const defaultTools = resolveDefaultTools(c, { allowUnauthenticated });
+    const defaultTools = resolveDefaultTools(c, { allowUnauthenticated: false });
     if (defaultTools.length > 0 || (Array.isArray(body.tools) && body.tools.length > 0)) {
       const merged = mergeDefaultTools(Array.isArray(body.tools) ? (body.tools as Record<string, unknown>[]) : undefined, defaultTools);
       if (merged.length > 0) {
@@ -308,13 +272,7 @@ export function createResponsesRoutes(
       }),
     });
 
-    if (routeMatch?.kind === "api-key" || routeMatch?.kind === "adapter") {
-      const directModel = routeMatch.resolvedModel ?? rawModel;
-      const directReq = { ...proxyReq, model: directModel, codexRequest: { ...codexRequest, model: directModel } };
-      return handleDirectRequest({ c, upstream: routeMatch.adapter, req: directReq, fmt: PASSTHROUGH_FORMAT });
-    }
-
-    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: PASSTHROUGH_FORMAT, proxyPool, fallbackUpstream });
+    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: PASSTHROUGH_FORMAT, proxyPool });
   };
 
   const compactHandler = async (c: Context) => {
@@ -325,23 +283,7 @@ export function createResponsesRoutes(
 
     const rawModel = typeof body.model === "string" ? body.model : "codex";
 
-    const modelCheck = validateClientKeyModel(c, rawModel);
-    if (!modelCheck.allowed) {
-      c.status(403);
-      return c.json({
-        type: "error",
-        error: {
-          type: "invalid_request_error",
-          code: "model_not_allowed",
-          message: modelCheck.message,
-          param: "model",
-        },
-      });
-    }
-
-    const routeMatch = upstreamRouter?.resolveMatch(rawModel);
-    const allowUnauthenticated = routeMatch?.kind === "api-key" || routeMatch?.kind === "adapter";
-    const authErr = checkAuth(c, accountPool, allowUnauthenticated);
+    const authErr = checkAuth(c, accountPool);
     if (authErr) return authErr;
 
     const requestId = c.get("requestId") ?? randomUUID().slice(0, 8);
@@ -358,93 +300,15 @@ export function createResponsesRoutes(
       }),
     });
 
-    const res = await handleCompact(c, accountPool, cookieJar, proxyPool, body, upstreamRouter);
-    if (res.ok) {
-      recordClientKeyUsage(c, rawModel, { input_tokens: 100, output_tokens: 100 });
-    }
-    return res;
+    return handleCompact(c, accountPool, cookieJar, proxyPool, body);
   };
 
-  const auxiliaryJsonHandler = (path: CodexAuxiliaryJsonPath) => async (c: Context) => {
-    const rawBody = await c.req.json();
-    const body = parseBody(c, rawBody);
-    if (body instanceof Response) return body;
-
-    const rawModel = nonEmptyString(body.model);
-    if (!rawModel) {
-      c.status(400);
-      return c.json({
-        error: {
-          message: "A non-empty model is required to select the Codex Responses upstream",
-          type: "invalid_request_error",
-          code: "missing_model",
-        },
-      });
-    }
-
-    const modelCheck = validateClientKeyModel(c, rawModel);
-    if (!modelCheck.allowed) {
-      c.status(403);
-      return c.json({
-        type: "error",
-        error: {
-          type: "invalid_request_error",
-          code: "model_not_allowed",
-          message: modelCheck.message,
-          param: "model",
-        },
-      });
-    }
-
-    const routeMatch = upstreamRouter?.resolveMatch(rawModel);
-    const allowUnauthenticated = routeMatch?.kind === "api-key" || routeMatch?.kind === "adapter";
-    const authErr = checkAuth(c, accountPool, allowUnauthenticated);
-    if (authErr) return authErr;
-
-    if (
-      (routeMatch?.kind !== "api-key" && routeMatch?.kind !== "adapter")
-      || !supportsCodexAuxiliaryJson(routeMatch.adapter)
-    ) {
-      c.status(400);
-      return c.json({
-        error: {
-          message: `Model ${rawModel} is not routed through a Codex Responses API-key provider`,
-          type: "invalid_request_error",
-          code: "unsupported_codex_auxiliary_route",
-        },
-      });
-    }
-
-    const directModel = routeMatch.resolvedModel ?? rawModel;
-    const response = await handleCodexAuxiliaryJson({
-      c,
-      upstream: routeMatch.adapter,
-      path,
-      body: directModel === rawModel ? body : { ...body, model: directModel },
-      model: directModel,
-    });
-    if (response.ok) {
-      recordClientKeyUsage(c, rawModel, { input_tokens: 100, output_tokens: 100 });
-    }
-    return response;
-  };
-
-  const searchHandler = auxiliaryJsonHandler("alpha/search");
-  const imageGenerationHandler = auxiliaryJsonHandler("images/generations");
-  const imageEditHandler = auxiliaryJsonHandler("images/edits");
-
-  app.post("/v1/responses", apiKeyAuth(accountPool, clientKeyPool), responsesHandler);
-  app.post("/v1/responses/review", apiKeyAuth(accountPool, clientKeyPool), responsesHandler);
-  app.post("/responses", apiKeyAuth(accountPool, clientKeyPool), responsesHandler);
-  app.post("/responses/review", apiKeyAuth(accountPool, clientKeyPool), responsesHandler);
-  app.post("/v1/responses/compact", apiKeyAuth(accountPool, clientKeyPool), compactHandler);
-  app.post("/responses/compact", apiKeyAuth(accountPool, clientKeyPool), compactHandler);
-  app.post("/v1/alpha/search", apiKeyAuth(accountPool, clientKeyPool), searchHandler);
-  app.post("/alpha/search", apiKeyAuth(accountPool, clientKeyPool), searchHandler);
-  app.post("/v1/images/generations", apiKeyAuth(accountPool, clientKeyPool), imageGenerationHandler);
-  app.post("/images/generations", apiKeyAuth(accountPool, clientKeyPool), imageGenerationHandler);
-  app.post("/v1/images/edits", apiKeyAuth(accountPool, clientKeyPool), imageEditHandler);
-  app.post("/images/edits", apiKeyAuth(accountPool, clientKeyPool), imageEditHandler);
+  app.post("/v1/responses", apiKeyAuth(accountPool), responsesHandler);
+  app.post("/v1/responses/review", apiKeyAuth(accountPool), responsesHandler);
+  app.post("/responses", apiKeyAuth(accountPool), responsesHandler);
+  app.post("/responses/review", apiKeyAuth(accountPool), responsesHandler);
+  app.post("/v1/responses/compact", apiKeyAuth(accountPool), compactHandler);
+  app.post("/responses/compact", apiKeyAuth(accountPool), compactHandler);
 
   return app;
 }

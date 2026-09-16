@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { Hono } from "hono";
 
 const mockConfig = {
   server: {
@@ -12,8 +13,6 @@ const mockConfig = {
     suppress_desktop_directives: false,
   },
   auth: {
-    jwt_token: undefined as string | undefined,
-    rotation_strategy: "least_used" as const,
     rate_limit_backoff_seconds: 60,
     request_interval_ms: 0,
   },
@@ -121,7 +120,13 @@ describe("/v1/responses stream error formatting", () => {
       Promise.reject(new CodexApiError(0, "error sending request for url"));
 
     const accountPool = createMockAccountPool();
-    const app = createResponsesRoutes(accountPool as never);
+    const routes = createResponsesRoutes(accountPool as never);
+    const app = new Hono();
+    app.use("*", async (c, next) => {
+      c.set("authRole", "master");
+      await next();
+    });
+    app.route("/", routes);
 
     const res = await app.request("/v1/responses", {
       method: "POST",

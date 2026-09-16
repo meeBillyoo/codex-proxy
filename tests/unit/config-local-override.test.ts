@@ -1,6 +1,6 @@
 /**
  * Tests for hasLocalOverride() — ensures user's local.yaml overrides
- * are tracked and queryable (used by startServer to respect Electron host config).
+ * are tracked and queryable (used by startServer to respect an explicit host config).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -49,15 +49,9 @@ model:
   inject_desktop_context: false
   suppress_desktop_directives: false
 auth:
-  jwt_token: null
-  chatgpt_oauth: true
-  refresh_enabled: true
-  refresh_margin_seconds: 300
-  rotation_strategy: least_used
+  max_concurrent_per_account: 3
+  request_interval_ms: 50
   rate_limit_backoff_seconds: 60
-  oauth_client_id: test
-  oauth_auth_endpoint: https://example.com
-  oauth_token_endpoint: https://example.com
 server:
   host: "::"
   port: 8080
@@ -126,14 +120,14 @@ server:
   it("returns false when local.yaml has unrelated keys only", async () => {
     const localYaml = `
 auth:
-  rotation_strategy: round_robin
+  request_interval_ms: 25
 `;
     const configDir = makeTempConfig(MINIMAL_DEFAULT, localYaml);
     const { loadConfig, hasLocalOverride } = await import("@src/config.js");
     loadConfig(configDir);
 
     expect(hasLocalOverride("server", "host")).toBe(false);
-    expect(hasLocalOverride("auth", "rotation_strategy")).toBe(true);
+    expect(hasLocalOverride("auth", "request_interval_ms")).toBe(true);
   });
 
   it("merged config uses local.yaml value over default", async () => {
@@ -148,7 +142,7 @@ server:
     expect(config.server.host).toBe("0.0.0.0");
   });
 
-  it("local.yaml host overrides Electron programmatic default", async () => {
+  it("local.yaml host overrides a programmatic default", async () => {
     const localYaml = `
 server:
   host: "0.0.0.0"
@@ -158,15 +152,15 @@ server:
     const config = loadConfig(configDir);
 
     // Simulate startServer host resolution (src/index.ts:103-105)
-    const electronDefault = "127.0.0.1";
+    const programmaticDefault = "127.0.0.1";
     const resolved = hasLocalOverride("server", "host")
       ? config.server.host
-      : electronDefault;
+      : programmaticDefault;
 
     expect(resolved).toBe("0.0.0.0");
   });
 
-  it("falls back to Electron default when local.yaml has no host", async () => {
+  it("falls back to the programmatic default when local.yaml has no host", async () => {
     const localYaml = `
 server:
   proxy_api_key: test-key
@@ -175,10 +169,10 @@ server:
     const { loadConfig, hasLocalOverride } = await import("@src/config.js");
     const config = loadConfig(configDir);
 
-    const electronDefault = "127.0.0.1";
+    const programmaticDefault = "127.0.0.1";
     const resolved = hasLocalOverride("server", "host")
       ? config.server.host
-      : (electronDefault ?? config.server.host);
+      : (programmaticDefault ?? config.server.host);
 
     expect(resolved).toBe("127.0.0.1");
   });

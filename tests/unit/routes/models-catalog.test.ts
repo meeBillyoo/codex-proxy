@@ -1,13 +1,12 @@
 /**
  * Unit tests for GET /v1/models/catalog route.
  * Verifies that model.isDefault dynamically tracks config.model.default (including aliases)
- * and honors client key allowed_models restrictions.
+ * for aliases and configured defaults.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createModelRoutes } from "@src/routes/models.js";
 import { resetModelStoreForTesting, loadStaticModels } from "@src/models/model-store.js";
-import type { ClientKeyPool } from "@src/auth/client-key-pool.js";
 import type { AccountPool } from "@src/auth/account-pool.js";
 
 const mockConfig = {
@@ -102,11 +101,12 @@ describe("GET /v1/models/catalog", () => {
   });
 
   it("requires the configured OpenAI-compatible bearer key in production wiring", async () => {
+    process.env.PROXY_API_KEY = "deployment-secret";
     mockConfig.server.proxy_api_key = "deployment-secret";
     const accountPool = {
       validateProxyApiKey: vi.fn((key: string) => key === "deployment-secret"),
     } as unknown as AccountPool;
-    const app = createModelRoutes(undefined, undefined, accountPool);
+    const app = createModelRoutes(accountPool);
 
     const missing = await app.request("/v1/models");
     expect(missing.status).toBe(401);
@@ -153,26 +153,4 @@ describe("GET /v1/models/catalog", () => {
     expect(gpt54?.isDefault).toBe(false);
   });
 
-  it("filters catalog based on client key allowed_models", async () => {
-    const mockClientKeyPool = {
-      getByKey: vi.fn((key: string) => {
-        if (key === "test-client-key") {
-          return { allowed_models: ["gpt-5.4"] };
-        }
-        return null;
-      }),
-    } as unknown as ClientKeyPool;
-
-    const app = createModelRoutes(undefined, mockClientKeyPool);
-    const res = await app.request("/v1/models/catalog", {
-      headers: {
-        Authorization: "Bearer test-client-key",
-      },
-    });
-
-    expect(res.status).toBe(200);
-    const catalog = (await res.json()) as Array<{ id: string }>;
-    expect(catalog.length).toBe(1);
-    expect(catalog[0].id).toBe("gpt-5.4");
-  });
 });

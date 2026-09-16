@@ -1,6 +1,5 @@
 import { Hono } from "hono";
 import type { AccountPool } from "../auth/account-pool.js";
-import type { ClientKeyPool } from "../auth/client-key-pool.js";
 import type { AccountInfo, CodexQuota } from "../auth/types.js";
 import { apiKeyAuth } from "../middleware/api-key-auth.js";
 
@@ -56,10 +55,9 @@ function virtualBillingSnapshot(accounts: AccountInfo[]): { total: number; used:
 /** OpenAI-compatible legacy billing routes used by gateways such as new-api. */
 export function createBillingRoutes(
   accountPool: AccountPool,
-  clientKeyPool?: ClientKeyPool,
 ): Hono {
   const app = new Hono();
-  const auth = apiKeyAuth(accountPool, clientKeyPool);
+  const auth = apiKeyAuth(accountPool);
 
   app.use("/v1/dashboard/billing/subscription", auth);
   app.use("/v1/dashboard/billing/usage", auth);

@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 import { getConfig } from "../../config.js";
-import type { ClientKeyEntry } from "../../auth/client-key-types.js";
 import { isRecord } from "../../translation/shared-utils.js";
 
 export interface ResolveDefaultToolsOptions {
@@ -39,16 +38,7 @@ export function resolveDefaultTools(
     return [];
   }
 
-  // 3. Check client key override
-  const authRole = c.get("authRole");
-  if (authRole === "client_key") {
-    const clientKey = c.get("clientKey") as ClientKeyEntry | undefined;
-    if (clientKey && clientKey.default_tools !== undefined && clientKey.default_tools !== null) {
-      return clientKey.default_tools;
-    }
-  }
-
-  // 4. Global configuration
+  // 3. Global configuration
   if (options.globalDefaultTools !== undefined) {
     return options.globalDefaultTools.length > 0
       ? options.globalDefaultTools

@@ -13,11 +13,8 @@ import {
 } from "../models/model-store.js";
 import { triggerImmediateRefresh } from "../models/model-fetcher.js";
 import { getConfig } from "../config.js";
-import type { ApiKeyPool } from "../auth/api-key-pool.js";
-import type { ClientKeyPool } from "../auth/client-key-pool.js";
 import type { AccountPool } from "../auth/account-pool.js";
 import { apiKeyAuth } from "../middleware/api-key-auth.js";
-import { extractProxyApiKey } from "../utils/extract-api-key.js";
 
 // --- Routes ---
 
@@ -66,33 +63,14 @@ function toOpenAIModel(info: CodexModelInfo): OpenAIModel {
   return model;
 }
 
-function toRuntimeOpenAIModel(id: string): OpenAIModel {
-  return {
-    id,
-    object: "model",
-    created: MODEL_CREATED_TIMESTAMP,
-    owned_by: "openai",
-  };
-}
-
 export function createModelRoutes(
-  apiKeyPool?: ApiKeyPool,
-  clientKeyPool?: ClientKeyPool,
   accountPool?: AccountPool,
 ): Hono {
   const app = new Hono();
 
   if (accountPool) {
-    app.use("/v1/models", apiKeyAuth(accountPool, clientKeyPool));
-    app.use("/v1/models/*", apiKeyAuth(accountPool, clientKeyPool));
-  }
-
-  function getClientKeyAllowedModels(c: import("hono").Context): string[] | null {
-    if (!clientKeyPool) return null;
-    const token = extractProxyApiKey(c);
-    if (!token) return null;
-    const key = clientKeyPool.getByKey(token);
-    return key?.allowed_models && key.allowed_models.length > 0 ? key.allowed_models : null;
+    app.use("/v1/models", apiKeyAuth(accountPool));
+    app.use("/v1/models/*", apiKeyAuth(accountPool));
   }
 
   app.get("/v1/models", (c) => {
@@ -102,17 +80,7 @@ export function createModelRoutes(
     for (const model of catalog) {
       modelsById.set(model.id, toOpenAIModel(model));
     }
-    for (const modelId of apiKeyPool?.getActiveModels() ?? []) {
-      if (!modelsById.has(modelId)) {
-        modelsById.set(modelId, toRuntimeOpenAIModel(modelId));
-      }
-    }
-
-    let data = [...modelsById.values()];
-    const allowed = getClientKeyAllowedModels(c);
-    if (allowed) {
-      data = data.filter((m) => allowed.includes(m.id));
-    }
+    const data = [...modelsById.values()];
 
     const response: OpenAIModelList = { object: "list", data };
     return c.json(response);
@@ -121,14 +89,10 @@ export function createModelRoutes(
   // Full catalog with reasoning efforts (for dashboard UI)
   // Must be before :modelId to avoid being matched as a model ID
   app.get("/v1/models/catalog", (c) => {
-    let catalog = getModelCatalog();
+    const catalog = getModelCatalog();
     const config = getConfig();
     const rawDefault = config.model?.default?.trim();
     const configDefault = rawDefault ? resolveModelId(rawDefault) : undefined;
-    const allowed = getClientKeyAllowedModels(c);
-    if (allowed) {
-      catalog = catalog.filter((m) => allowed.includes(m.id));
-    }
 
     // Default outputModalities to ["text"] for chat-family entries that don't
     // set it explicitly, matching the interface's documented default.
@@ -143,27 +107,10 @@ export function createModelRoutes(
 
   app.get("/v1/models/:modelId", (c) => {
     const modelId = c.req.param("modelId");
-    const allowed = getClientKeyAllowedModels(c);
-    if (allowed && !allowed.includes(modelId)) {
-      c.status(404);
-      return c.json({
-        error: {
-          message: `Model '${modelId}' not found`,
-          type: "invalid_request_error",
-          param: "model",
-          code: "model_not_found",
-        },
-      });
-    }
-
     const catalog = getModelCatalog();
 
     const info = catalog.find((m) => m.id === modelId);
     if (info) return c.json(toOpenAIModel(info));
-
-    if (apiKeyPool?.hasActiveModel(modelId)) {
-      return c.json(toRuntimeOpenAIModel(modelId));
-    }
 
     c.status(404);
     return c.json({
@@ -179,12 +126,6 @@ export function createModelRoutes(
   // Extended endpoint: model details with reasoning efforts
   app.get("/v1/models/:modelId/info", (c) => {
     const modelId = c.req.param("modelId");
-    const allowed = getClientKeyAllowedModels(c);
-    if (allowed && !allowed.includes(modelId)) {
-      c.status(404);
-      return c.json({ error: `Model '${modelId}' not found` });
-    }
-
     const info = getModelInfo(modelId);
     if (!info) {
       c.status(404);
@@ -200,15 +141,12 @@ export function createModelRoutes(
 
   // Admin endpoint: trigger immediate model refresh
   app.post("/admin/refresh-models", (c) => {
-    const config = getConfig();
-    const configKey = config.server.proxy_api_key;
-    if (configKey) {
-      const authHeader = c.req.header("Authorization") ?? "";
-      const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
-      if (token !== configKey) {
-        c.status(401);
-        return c.json({ error: "Unauthorized" });
-      }
+    const configKey = process.env.PROXY_API_KEY?.trim();
+    const authHeader = c.req.header("Authorization") ?? "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+    if (!configKey || token !== configKey) {
+      c.status(401);
+      return c.json({ error: "Unauthorized" });
     }
     triggerImmediateRefresh();
     return c.json({ ok: true, message: "Model refresh triggered" });

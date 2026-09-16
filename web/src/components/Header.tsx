@@ -41,7 +41,7 @@ function StableText({ tKey, children, class: cls }: { tKey: TranslationKey; chil
 }
 
 interface HeaderProps {
-  onAddAccount: () => void;
+  onAddAccount?: () => void;
   onCheckUpdate: () => void;
   onOpenUpdateModal?: () => void;
   checking: boolean;
@@ -206,16 +206,17 @@ export function Header({ onAddAccount, onCheckUpdate, onOpenUpdateModal, checkin
             >
               {isDark ? SVG_SUN : SVG_MOON}
             </button>
-            {/* Add Account — hidden on mobile, available via FAB */}
-            <button
-              onClick={onAddAccount}
-              class="hidden sm:flex items-center gap-2 px-4 py-2 bg-primary-action hover:bg-primary-action-hover text-white text-xs font-semibold rounded-lg transition-colors shadow-sm active:scale-95"
-            >
-              <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              <StableText tKey="addAccount">{t("addAccount")}</StableText>
-            </button>
+            {onAddAccount && (
+              <button
+                onClick={onAddAccount}
+                class="hidden sm:flex items-center gap-2 px-4 py-2 bg-primary-action hover:bg-primary-action-hover text-white text-xs font-semibold rounded-lg transition-colors shadow-sm active:scale-95"
+              >
+                <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                <StableText tKey="addAccount">{t("addAccount")}</StableText>
+              </button>
+            )}
 
             {/* Mobile FAB — language + theme + add account, floating bottom-right */}
             <div class="sm:hidden">
@@ -265,16 +266,20 @@ export function Header({ onAddAccount, onCheckUpdate, onOpenUpdateModal, checkin
                       {isDark ? SVG_SUN : SVG_MOON}
                       <span>{isDark ? t("lightMode") : t("darkMode")}</span>
                     </button>
-                    <div class="h-px bg-gray-200 dark:bg-border-dark" />
-                    <button
-                      onClick={() => { onAddAccount(); setFabOpen(false); }}
-                      class="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-white bg-primary-action hover:bg-primary-action-hover"
-                    >
-                      <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                      </svg>
-                      <span>{t("addAccount")}</span>
-                    </button>
+                    {onAddAccount && (
+                      <>
+                        <div class="h-px bg-gray-200 dark:bg-border-dark" />
+                        <button
+                          onClick={() => { onAddAccount(); setFabOpen(false); }}
+                          class="flex items-center gap-3 px-4 py-3 text-sm font-semibold text-white bg-primary-action hover:bg-primary-action-hover"
+                        >
+                          <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                          </svg>
+                          <span>{t("addAccount")}</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 </>
               )}

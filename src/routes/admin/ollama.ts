@@ -73,9 +73,8 @@ export function createOllamaAdminRoutes(): Hono {
 
   app.post("/admin/ollama-settings", async (c) => {
     // Auth is handled at the middleware layer (`src/middleware/dashboard-auth.ts`):
-    // all `/admin/*` routes require either a localhost request or a valid
-    // dashboard session, matching the convention used by the other admin
-    // POSTs (`/admin/quota-settings`, `/admin/rotation-settings`, etc.).
+    // all `/admin/*` routes require a valid dashboard session, matching the
+    // convention used by the other admin settings endpoints.
     let parsedBody: unknown;
     try {
       parsedBody = await c.req.json();

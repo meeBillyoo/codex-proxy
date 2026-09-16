@@ -42,6 +42,7 @@ function createApp(): Hono {
 
 describe("dashboard-auth middleware", () => {
   beforeEach(() => {
+    process.env.PROXY_API_KEY = "test-key";
     vi.clearAllMocks();
     mockConfig.server.proxy_api_key = "test-key";
     mockConfig.server.trust_proxy = false;
@@ -49,25 +50,25 @@ describe("dashboard-auth middleware", () => {
     sessionMod._clearTestSessions();
   });
 
-  it("passes through when proxy_api_key is not set", async () => {
+  it("requires a session regardless of legacy config state", async () => {
     mockConfig.server.proxy_api_key = null;
     const app = createApp();
-    const res = await app.request("/auth/accounts");
-    expect(res.status).toBe(200);
+    const res = await app.request("/auth/account");
+    expect(res.status).toBe(401);
   });
 
-  it("passes through for localhost requests", async () => {
+  it("requires a session for localhost requests", async () => {
     mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
     const app = createApp();
-    const res = await app.request("/auth/accounts");
-    expect(res.status).toBe(200);
+    const res = await app.request("/auth/account");
+    expect(res.status).toBe(401);
   });
 
-  it("passes through for ::1 localhost", async () => {
+  it("requires a session for ::1 localhost", async () => {
     mockGetConnInfo.mockReturnValue({ remote: { address: "::1" } });
     const app = createApp();
-    const res = await app.request("/admin/rotation-settings");
-    expect(res.status).toBe(200);
+    const res = await app.request("/admin/general-settings");
+    expect(res.status).toBe(401);
   });
 
   it("passes through for GET / (HTML shell)", async () => {
@@ -114,9 +115,9 @@ describe("dashboard-auth middleware", () => {
     }
   });
 
-  it("returns 401 for /auth/accounts without session and sets X-Dashboard-Auth header", async () => {
+  it("returns 401 for /auth/account without session and sets X-Dashboard-Auth header", async () => {
     const app = createApp();
-    const res = await app.request("/auth/accounts");
+    const res = await app.request("/auth/account");
     expect(res.status).toBe(401);
     expect(res.headers.get("x-dashboard-auth")).toBe("required");
     expect(res.headers.get("access-control-expose-headers")).toBe("X-Dashboard-Auth");
@@ -126,7 +127,7 @@ describe("dashboard-auth middleware", () => {
 
   it("returns 401 for /admin/* without session and sets X-Dashboard-Auth header", async () => {
     const app = createApp();
-    const res = await app.request("/admin/rotation-settings");
+    const res = await app.request("/admin/general-settings");
     expect(res.status).toBe(401);
     expect(res.headers.get("x-dashboard-auth")).toBe("required");
   });
@@ -141,7 +142,7 @@ describe("dashboard-auth middleware", () => {
   it("passes through with valid session cookie", async () => {
     sessionMod._addTestSession("valid-session-id");
     const app = createApp();
-    const res = await app.request("/auth/accounts", {
+    const res = await app.request("/auth/account", {
       headers: { Cookie: "_codex_session=valid-session-id" },
     });
     expect(res.status).toBe(200);
@@ -149,39 +150,39 @@ describe("dashboard-auth middleware", () => {
 
   it("returns 401 with invalid session cookie", async () => {
     const app = createApp();
-    const res = await app.request("/auth/accounts", {
+    const res = await app.request("/auth/account", {
       headers: { Cookie: "_codex_session=invalid-id" },
     });
     expect(res.status).toBe(401);
   });
 
   describe("trust_proxy", () => {
-    it("bypasses auth for localhost socket even with X-Forwarded-For when trust_proxy=false", async () => {
+    it("requires auth for localhost socket even with X-Forwarded-For when trust_proxy=false", async () => {
       mockConfig.server.trust_proxy = false;
       mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
       const app = createApp();
-      const res = await app.request("/auth/accounts", {
+      const res = await app.request("/auth/account", {
         headers: { "X-Forwarded-For": "8.8.8.8" },
       });
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(401);
     });
 
     it("requires auth when trust_proxy=true and X-Forwarded-For reveals remote IP", async () => {
       mockConfig.server.trust_proxy = true;
       mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
       const app = createApp();
-      const res = await app.request("/auth/accounts", {
+      const res = await app.request("/auth/account", {
         headers: { "X-Forwarded-For": "8.8.8.8" },
       });
       expect(res.status).toBe(401);
     });
 
-    it("still bypasses for localhost when trust_proxy=true and no forwarded headers", async () => {
+    it("still requires auth for localhost when trust_proxy=true and no forwarded headers", async () => {
       mockConfig.server.trust_proxy = true;
       mockGetConnInfo.mockReturnValue({ remote: { address: "127.0.0.1" } });
       const app = createApp();
-      const res = await app.request("/auth/accounts");
-      expect(res.status).toBe(200);
+      const res = await app.request("/auth/account");
+      expect(res.status).toBe(401);
     });
   });
 });

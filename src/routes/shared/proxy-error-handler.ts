@@ -1,8 +1,8 @@
 /**
  * Structured error handler for CodexApiError responses in the proxy handler.
  *
- * Returns an ErrorAction telling the orchestrator whether to retry (acquire
- * a new account) or respond with an error to the client.
+ * Returns an ErrorAction telling the orchestrator whether a transient retry
+ * is appropriate or the error should be returned to the client.
  */
 
 import type { AccountPool } from "../../auth/account-pool.js";
@@ -76,7 +76,7 @@ export function handleCodexApiError(
   if (isModelNotSupportedError(err)) {
     if (!modelRetried) {
       console.warn(
-        `[${tag}] Account ${entryId} (${email}) | Model "${model}" not supported, trying different account...`,
+        `[${tag}] Account ${entryId} (${email}) | Model "${model}" not supported`,
       );
       const fallbackStatus = toErrorStatus(err.status);
       return {
@@ -91,11 +91,11 @@ export function handleCodexApiError(
   console.error(`[${tag}] Account ${entryId} | Codex API error:`, err.message);
 
   // A server_error frame before any visible output is a transient backend
-  // failure. Retry it once on a fresh account/connection; never classify it
+  // failure. It may be retried once on a fresh connection; never classify it
   // as quota, rate-limit, ban, or overload.
   if (isEarlyServerError(err)) {
     if (!earlyServerErrorRetried) {
-      console.warn(`[${tag}] Account ${entryId} (${email}) | 500 early server error, trying different account...`);
+      console.warn(`[${tag}] Account ${entryId} (${email}) | 500 early server error`);
       return {
         action: "retry",
         releaseBeforeRetry: true,
@@ -122,8 +122,7 @@ export function handleCodexApiError(
     console.warn(
       `[${tag}] Account ${entryId} (${email}) | 429 rate limited` +
         (limitId ? ` [${limitId}]` : "") +
-        (backoffDisplay != null ? ` (resets in ${backoffDisplay}s)` : "") +
-        `, trying different account...`,
+        (backoffDisplay != null ? ` (resets in ${backoffDisplay}s)` : ""),
     );
     return { action: "retry", status: 429, message: err.message, useFormat429: true };
   }
@@ -132,16 +131,16 @@ export function handleCodexApiError(
   if (isQuotaExhaustedError(err)) {
     pool.markStatus(entryId, "quota_exhausted");
     console.warn(
-      `[${tag}] Account ${entryId} (${email}) | 402 quota exhausted, trying different account...`,
+      `[${tag}] Account ${entryId} (${email}) | 402 quota exhausted`,
     );
     return { action: "retry", status: 402, message: err.message };
   }
 
-  // 503 server capacity — transient upstream condition. Retry on another
-  // account when available, but do not mutate account health or quota state.
+  // 503 server capacity — transient upstream condition. Do not mutate account
+  // health or quota state.
   if (isServerOverloadedError(err)) {
     console.warn(
-      `[${tag}] Account ${entryId} (${email}) | 503 server overloaded, trying different account...`,
+      `[${tag}] Account ${entryId} (${email}) | 503 server overloaded`,
     );
     return {
       action: "retry",
@@ -156,7 +155,7 @@ export function handleCodexApiError(
     const cooldown = recordCfChallengeCooldown(entryId);
     console.warn(
       `[${tag}] Account ${entryId} (${email}) | Cloudflare challenge 403, ` +
-        `cooling down for ${cooldown.delaySeconds}s and trying different account...`,
+        `cooling down for ${cooldown.delaySeconds}s`,
     );
     return {
       action: "retry",
@@ -170,7 +169,7 @@ export function handleCodexApiError(
   if (isBanError(err)) {
     pool.markStatus(entryId, "banned");
     console.warn(
-      `[${tag}] Account ${entryId} (${email}) | 403 banned, trying different account...`,
+      `[${tag}] Account ${entryId} (${email}) | 403 banned`,
     );
     return { action: "retry", status: 403, message: err.message };
   }
@@ -181,7 +180,7 @@ export function handleCodexApiError(
     const newStatus = isDeactivated ? "banned" : "expired";
     pool.markStatus(entryId, newStatus);
     console.warn(
-      `[${tag}] Account ${entryId} (${email}) | 401 ${isDeactivated ? "deactivated (banned)" : "token invalidated"}, trying different account...`,
+      `[${tag}] Account ${entryId} (${email}) | 401 ${isDeactivated ? "deactivated (banned)" : "token invalidated"}`,
     );
     return { action: "retry", status: 401, message: err.message };
   }
@@ -189,8 +188,8 @@ export function handleCodexApiError(
   // 7. Cloudflare path block (empty-body 404). CF's Bot Management can
   //    "hide" the /codex/responses path by returning 404 with no body when
   //    the captured __cf_bm cookie no longer matches the request
-  //    fingerprint. Clear the cookie jar (so the next attempt is a clean,
-  //    fingerprint-only request) and retry on a different account. After
+  //    fingerprint. Clear the cookie jar so a later attempt is clean and
+  //    fingerprint-only. After
   //    the threshold is reached within the sliding window, disable the
   //    account so session affinity stops pinning a dying conversation to
   //    it.

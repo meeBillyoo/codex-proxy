@@ -1,379 +1,425 @@
 /**
- * AccountPool — facade composing AccountRegistry (state + CRUD) and
- * AccountLifecycle (acquire locks + rotation).
- *
- * All 31 public methods delegate to the sub-modules.
- * External importers see the exact same API — zero migration needed.
+ * Runtime for the one Codex CLI account owned by the current OS user.
+ * Credentials always come from `$CODEX_HOME/auth.json` (or `~/.codex/auth.json`).
+ * Only non-secret usage and quota state is persisted by this application.
  */
 
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
+import { dirname, resolve } from "path";
 import { getConfig } from "../config.js";
-import { createFsPersistence } from "./account-persistence.js";
-import { AccountRegistry } from "./account-registry.js";
-import { AccountLifecycle } from "./account-lifecycle.js";
-import type { AccountPersistence, PersistenceLoadHealth } from "./account-persistence.js";
-import type { AccountCapacitySummary } from "./account-lifecycle.js";
-import type { CodexTokenMetadata } from "./token-metadata.js";
-import type { RotationStrategyName } from "./rotation-strategy.js";
-import type {
-  AccountEntry,
-  AccountInfo,
-  AcquiredAccount,
-  CodexFingerprintMode,
-  CodexQuota,
-} from "./types.js";
+import { getDataDir } from "../paths.js";
+import { jitter } from "../utils/jitter.js";
+import { getCliAuthPath, importCliAuth } from "./cli-auth.js";
+import { extractChatGptAccountId, extractUserProfile, isTokenExpired } from "./jwt-utils.js";
+import { hasReachedCachedQuota } from "./quota-skip.js";
+import { safeEqual } from "./safe-equal.js";
+import type { AccountEntry, AccountInfo, AccountUsage, AcquiredAccount, CodexQuota } from "./types.js";
 
-export interface PersistenceHealth {
-  ok: boolean;
-  reason?: "load_failed_quarantined" | "load_failed_unquarantined";
-  message?: string;
-  quarantined?: boolean;
-  backupPath?: string | null;
+const ENTRY_ID = "codex-cli";
+const STATE_FILE = "codex-account-state.json";
+const ACQUIRE_LOCK_TTL_MS = 5 * 60 * 1000;
+
+interface PersistedAccountState {
+  version: 1;
+  usage: AccountUsage;
+  cachedQuota: CodexQuota | null;
+  quotaFetchedAt: string | null;
+}
+
+export interface CliAccountReloadResult {
+  account: AccountInfo;
+  auth_file: string;
+}
+
+export interface AccountCapacitySummary {
+  max_concurrent_per_account: number;
+  total_slots: number;
+  used_slots: number;
+  available_slots: number;
+}
+
+function emptyUsage(): AccountUsage {
+  return {
+    request_count: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cached_tokens: 0,
+    empty_response_count: 0,
+    last_used: null,
+    window_request_count: 0,
+    window_input_tokens: 0,
+    window_output_tokens: 0,
+    window_cached_tokens: 0,
+    window_counters_reset_at: null,
+    limit_window_seconds: null,
+  };
+}
+
+function loadState(): PersistedAccountState {
+  const filePath = resolve(getDataDir(), STATE_FILE);
+  try {
+    if (!existsSync(filePath)) {
+      return { version: 1, usage: emptyUsage(), cachedQuota: null, quotaFetchedAt: null };
+    }
+    const parsed = JSON.parse(readFileSync(filePath, "utf-8")) as Partial<PersistedAccountState>;
+    return {
+      version: 1,
+      usage: { ...emptyUsage(), ...(parsed.usage ?? {}) },
+      cachedQuota: parsed.cachedQuota ?? null,
+      quotaFetchedAt: parsed.quotaFetchedAt ?? null,
+    };
+  } catch (error) {
+    console.warn(`[Auth] Failed to read ${STATE_FILE}: ${error instanceof Error ? error.message : error}`);
+    return { version: 1, usage: emptyUsage(), cachedQuota: null, quotaFetchedAt: null };
+  }
 }
 
 export class AccountPool {
-  private registry: AccountRegistry;
-  private lifecycle: AccountLifecycle;
-  private persistenceHealth: PersistenceLoadHealth | null = null;
-  private _onExpired?: (entryId: string) => void;
+  private entry: AccountEntry | null = null;
+  private activeSlots: number[] = [];
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly state = loadState();
 
-  constructor(options?: {
-    persistence?: AccountPersistence;
-    rotationStrategy?: RotationStrategyName;
-    initialToken?: string | null;
-    rateLimitBackoffSeconds?: number;
-  }) {
-    const persistence = options?.persistence ?? createFsPersistence();
-
-    const needsConfig =
-      options?.rotationStrategy === undefined ||
-      options?.initialToken === undefined ||
-      options?.rateLimitBackoffSeconds === undefined;
-    const config = needsConfig ? getConfig() : undefined;
-
-    const strategyName = options?.rotationStrategy ?? config!.auth.rotation_strategy;
-    this.rateLimitBackoffSeconds =
-      options?.rateLimitBackoffSeconds ?? config!.auth.rate_limit_backoff_seconds;
-
-    // Load persisted entries. When loadFailed=true, the file on disk was
-    // unparseable and has been quarantined; we must not write the empty
-    // in-memory map back over the (now renamed) original. The registry's
-    // persistDisabled flag keeps schedulePersist/persistNow as no-ops
-    // until the user restores a healthy accounts.json and restarts.
-    const loaded = persistence.load();
-    if (loaded.loadFailed === true) {
-      // Default to assuming quarantine succeeded if the persistence
-      // implementation didn't report — older/mocked impls predate the
-      // health field. The file-based createFsPersistence always reports.
-      this.persistenceHealth = loaded.health ?? { quarantined: true, backupPath: null, store: "accounts.json" };
-    }
-    this.registry = new AccountRegistry(persistence, loaded.entries, {
-      persistDisabled: loaded.loadFailed === true,
-    });
-    this.lifecycle = new AccountLifecycle(this.registry, strategyName);
-
-    // Override with initial token if set
-    const initialToken =
-      options?.initialToken !== undefined
-        ? options.initialToken
-        : config!.auth.jwt_token;
-    if (initialToken) {
-      this.addAccount(initialToken);
-    }
-    const envToken = process.env.CODEX_JWT_TOKEN;
-    if (envToken) {
-      this.addAccount(envToken);
+  constructor() {
+    try {
+      this.reloadFromCli();
+    } catch (error) {
+      console.warn(`[Auth] Codex CLI account unavailable: ${error instanceof Error ? error.message : error}`);
     }
   }
 
-  private rateLimitBackoffSeconds: number;
+  reloadFromCli(): CliAccountReloadResult {
+    const cliAuth = importCliAuth();
+    const token = cliAuth.access_token!;
+    const profile = extractUserProfile(token);
+    const tokenAccountId = extractChatGptAccountId(token);
+    const accountId = tokenAccountId ?? cliAuth.account_id ?? null;
+    const prior = this.entry;
 
-  // ── Lifecycle (acquire/release) ───────────────────────────────────
+    this.entry = {
+      id: ENTRY_ID,
+      token,
+      refreshToken: null,
+      email: profile?.email ?? null,
+      accountId,
+      organizationId: null,
+      accountIdSource: tokenAccountId ? "access_token" : accountId ? "id_token" : null,
+      userId: profile?.chatgpt_user_id ?? null,
+      label: null,
+      codexFingerprintMode: "off",
+      planType: profile?.chatgpt_plan_type ?? null,
+      status: isTokenExpired(token) ? "expired" : "active",
+      usage: prior?.usage ?? this.state.usage,
+      addedAt: prior?.addedAt ?? new Date().toISOString(),
+      cachedQuota: prior?.cachedQuota ?? this.state.cachedQuota,
+      quotaFetchedAt: prior?.quotaFetchedAt ?? this.state.quotaFetchedAt,
+      quotaVerifyRequired: prior?.quotaVerifyRequired,
+    };
+
+    void import("../proxy/ws-pool.js")
+      .then((mod) => mod.getWsPool().evictByEntryId(ENTRY_ID))
+      .catch(() => {});
+
+    return { account: this.toInfo(this.entry), auth_file: getCliAuthPath() };
+  }
+
+  getAuthFilePath(): string {
+    return getCliAuthPath();
+  }
 
   acquire(options?: { model?: string; excludeIds?: string[]; preferredEntryId?: string }): AcquiredAccount | null {
-    return this.lifecycle.acquire(options);
+    const entry = this.entry;
+    if (!entry || options?.excludeIds?.includes(ENTRY_ID)) return null;
+    this.refreshStatus(entry);
+    if (entry.status !== "active") return null;
+    if (getConfig().quota.skip_exhausted && hasReachedCachedQuota(entry, options?.model)) return null;
+
+    const now = Date.now();
+    this.activeSlots = this.activeSlots.filter((startedAt) => now - startedAt <= ACQUIRE_LOCK_TTL_MS);
+    const maxConcurrent = getConfig().auth.max_concurrent_per_account ?? 3;
+    if (this.activeSlots.length >= maxConcurrent) return null;
+    const prevSlotMs = this.activeSlots.at(-1) ?? null;
+    this.activeSlots.push(now);
+    return { entryId: ENTRY_ID, token: entry.token, accountId: entry.accountId, codexFingerprintMode: "off", prevSlotMs };
   }
 
-  release(
-    entryId: string,
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      cached_tokens?: number;
-      estimated_cost_usd?: number;
-      image_input_tokens?: number;
-      image_output_tokens?: number;
-      image_request_attempted?: boolean;
-      image_request_succeeded?: boolean;
-    },
-  ): void {
-    this.lifecycle.release(entryId, usage);
+  release(entryId: string, usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cached_tokens?: number;
+    estimated_cost_usd?: number;
+    image_input_tokens?: number;
+    image_output_tokens?: number;
+    image_request_attempted?: boolean;
+    image_request_succeeded?: boolean;
+  }): void {
+    this.releaseSlot(entryId);
+    const entry = this.entry;
+    if (!entry || entryId !== ENTRY_ID) return;
+    const current = entry.usage;
+    current.request_count++;
+    current.last_used = new Date().toISOString();
+    current.window_request_count = (current.window_request_count ?? 0) + 1;
+    if (usage) {
+      current.input_tokens += usage.input_tokens ?? 0;
+      current.output_tokens += usage.output_tokens ?? 0;
+      current.cached_tokens = (current.cached_tokens ?? 0) + (usage.cached_tokens ?? 0);
+      current.estimated_cost_usd = (current.estimated_cost_usd ?? 0) + (usage.estimated_cost_usd ?? 0);
+      current.image_input_tokens = (current.image_input_tokens ?? 0) + (usage.image_input_tokens ?? 0);
+      current.image_output_tokens = (current.image_output_tokens ?? 0) + (usage.image_output_tokens ?? 0);
+      current.window_input_tokens = (current.window_input_tokens ?? 0) + (usage.input_tokens ?? 0);
+      current.window_output_tokens = (current.window_output_tokens ?? 0) + (usage.output_tokens ?? 0);
+      current.window_cached_tokens = (current.window_cached_tokens ?? 0) + (usage.cached_tokens ?? 0);
+      current.window_estimated_cost_usd = (current.window_estimated_cost_usd ?? 0) + (usage.estimated_cost_usd ?? 0);
+      current.window_image_input_tokens = (current.window_image_input_tokens ?? 0) + (usage.image_input_tokens ?? 0);
+      current.window_image_output_tokens = (current.window_image_output_tokens ?? 0) + (usage.image_output_tokens ?? 0);
+      if (usage.image_request_attempted) {
+        if (usage.image_request_succeeded) {
+          current.image_request_count = (current.image_request_count ?? 0) + 1;
+          current.window_image_request_count = (current.window_image_request_count ?? 0) + 1;
+        } else {
+          current.image_request_failed_count = (current.image_request_failed_count ?? 0) + 1;
+          current.window_image_request_failed_count = (current.window_image_request_failed_count ?? 0) + 1;
+        }
+      }
+    }
+    this.schedulePersist();
   }
 
   releaseWithoutCounting(entryId: string): void {
-    this.lifecycle.releaseWithoutCounting(entryId);
+    this.releaseSlot(entryId);
   }
 
-  /** Fast check: is there at least one active account not in the exclude list? */
+  private releaseSlot(entryId: string): void {
+    if (entryId === ENTRY_ID) this.activeSlots.shift();
+  }
+
   hasAvailableAccounts(excludeIds?: string[]): boolean {
-    return this.registry.hasAvailableAccounts(excludeIds);
+    const entry = this.entry;
+    if (!entry || excludeIds?.includes(ENTRY_ID)) return false;
+    this.refreshStatus(entry);
+    return entry.status === "active" && (!getConfig().quota.skip_exhausted || !hasReachedCachedQuota(entry));
   }
 
-  setRotationStrategy(name: "least_used" | "round_robin" | "sticky"): void {
-    this.lifecycle.setRotationStrategy(name);
-  }
-
-  getDistinctPlanAccounts(): Array<{
-    planType: string;
-    entryId: string;
-    token: string;
-    accountId: string | null;
-  }> {
-    return this.lifecycle.getDistinctPlanAccounts();
-  }
-
-  // ── CRUD ──────────────────────────────────────────────────────────
-
-  addAccount(
-    token: string,
-    refreshToken?: string | null,
-    metadata?: Partial<CodexTokenMetadata>,
-  ): string {
-    return this.registry.addAccount(token, refreshToken, metadata);
-  }
-
-  async withPersistenceBatch<T>(fn: () => Promise<T>): Promise<T> {
-    this.registry.beginPersistenceBatch();
-    try {
-      return await fn();
-    } finally {
-      this.registry.endPersistenceBatch();
-    }
-  }
-
-  removeAccount(id: string): boolean {
-    this.lifecycle.clearLock(id);
-    this.evictWsPool(id);
-    return this.registry.removeAccount(id);
-  }
-
-  updateToken(entryId: string, newToken: string, refreshToken?: string): void {
-    this.registry.updateToken(entryId, newToken, refreshToken);
-    // The new access_token doesn't take effect on already-open WebSocket
-    // sessions (the upstream auth header is captured at handshake), so any
-    // pooled WS for this entry is now using a stale credential. Evict so the
-    // next request opens a fresh WS with the refreshed token.
-    this.evictWsPool(entryId);
-  }
-
-  /** Drop any pooled WebSocket connections for `entryId`. Used by status
-   *  mutations and token refresh to prevent in-flight reuse from carrying
-   *  stale auth or routing into a backend the account is no longer welcome
-   *  on. Lazy-imports ws-pool so this module doesn't pull the proxy layer
-   *  into bootstrap when the pool isn't otherwise reachable. */
-  private evictWsPool(entryId: string): void {
-    // Avoid hard import: account-pool is also exercised in unit tests that
-    // never touch the WS layer, and dynamic resolution keeps that contract.
-    void import("../proxy/ws-pool.js")
-      .then((mod) => mod.getWsPool().evictByEntryId(entryId))
-      .catch(() => { /* pool unavailable in this build/test context — ignore */ });
-  }
-
-  setLabel(entryId: string, label: string | null): boolean {
-    return this.registry.setLabel(entryId, label);
-  }
-
-  setCodexFingerprintMode(entryId: string, mode: CodexFingerprintMode): boolean {
-    const changed = this.registry.setCodexFingerprintMode(entryId, mode);
-    if (changed) this.evictWsPool(entryId);
-    return changed;
-  }
-
-  // ── Status mutations (coordinate registry + lifecycle lock clear) ─
-
-  /** Register a callback invoked when an account is marked "expired" (e.g. 401 from upstream). */
-  onExpired(cb: (entryId: string) => void): void {
-    this._onExpired = cb;
+  getDistinctPlanAccounts(): Array<{ planType: string; entryId: string; token: string; accountId: string | null }> {
+    const entry = this.entry;
+    if (!entry || entry.status !== "active") return [];
+    return [{ planType: entry.planType ?? "unknown", entryId: ENTRY_ID, token: entry.token, accountId: entry.accountId }];
   }
 
   markStatus(entryId: string, status: AccountEntry["status"]): void {
-    if (this.registry.markStatus(entryId, status)) {
-      this.lifecycle.clearLock(entryId);
-      // Status transitions to expired/banned/disabled make the account
-      // unusable; reusing a pooled WS would just hit the same wall on the
-      // upstream side. Evict so the pool doesn't hold a doomed connection.
-      if (status !== "active") this.evictWsPool(entryId);
+    if (!this.entry || entryId !== ENTRY_ID) return;
+    this.entry.status = status;
+    if (status !== "active") {
+      this.activeSlots = [];
+      void import("../proxy/ws-pool.js").then((mod) => mod.getWsPool().evictByEntryId(ENTRY_ID)).catch(() => {});
     }
-    if (status === "expired" && this._onExpired) {
-      this._onExpired(entryId);
-    }
+    this.schedulePersist();
   }
 
-  /**
-   * Single source of truth for "this account just got 429'd". Writes the
-   * retry-after hint into cachedQuota.rate_limit (primary bucket); pool
-   * exclusion flows through {@link hasReachedCachedQuota}. See
-   * AccountRegistry.applyRateLimit429 for full semantics including
-   * never-shrink-existing-reset_at and bucket-inference fallback.
-   */
-  applyRateLimit429(
-    entryId: string,
-    options?: { retryAfterSec?: number; resetsAtSec?: number; countRequest?: boolean },
-  ): void {
-    if (this.registry.applyRateLimit429(entryId, this.rateLimitBackoffSeconds, options)) {
-      this.lifecycle.clearLock(entryId);
-      this.evictWsPool(entryId);
-    }
+  applyRateLimit429(entryId: string, options?: { retryAfterSec?: number; resetsAtSec?: number; countRequest?: boolean }): void {
+    const entry = this.entry;
+    if (!entry || entryId !== ENTRY_ID) return;
+    const nowSec = Date.now() / 1000;
+    const backoff = getConfig().auth.rate_limit_backoff_seconds;
+    const nextReset = options?.resetsAtSec
+      ?? (options?.retryAfterSec != null ? nowSec + jitter(options.retryAfterSec, 0.2) : nowSec + jitter(backoff, 0.2));
+    const quota = entry.cachedQuota ?? this.emptyQuota(entry, nextReset);
+    quota.rate_limit = { ...quota.rate_limit, allowed: false, limit_reached: true, used_percent: 100, remaining_percent: 0, reset_at: Math.max(quota.rate_limit.reset_at ?? 0, nextReset) };
+    entry.cachedQuota = quota;
+    entry.quotaFetchedAt = new Date().toISOString();
+    if (options?.countRequest) this.recordRequestOnly(entry);
+    this.schedulePersist();
   }
 
-  applyAdditionalRateLimit429(
-    entryId: string,
-    limitId: string,
-    options?: { retryAfterSec?: number; resetsAtSec?: number; countRequest?: boolean },
-  ): void {
-    if (this.registry.applyAdditionalRateLimit429(entryId, limitId, this.rateLimitBackoffSeconds, options)) {
-      this.lifecycle.clearLock(entryId);
-      this.evictWsPool(entryId);
-    }
+  applyAdditionalRateLimit429(entryId: string, limitId: string, options?: { retryAfterSec?: number; resetsAtSec?: number; countRequest?: boolean }): void {
+    const entry = this.entry;
+    if (!entry || entryId !== ENTRY_ID) return;
+    const nowSec = Date.now() / 1000;
+    const backoff = getConfig().auth.rate_limit_backoff_seconds;
+    const nextReset = options?.resetsAtSec
+      ?? (options?.retryAfterSec != null ? nowSec + jitter(options.retryAfterSec, 0.2) : nowSec + jitter(backoff, 0.2));
+    const quota = entry.cachedQuota ?? this.emptyQuota(entry, null);
+    const prior = quota.rate_limits_by_limit_id?.[limitId];
+    quota.rate_limits_by_limit_id = {
+      ...(quota.rate_limits_by_limit_id ?? {}),
+      [limitId]: {
+        limit_id: limitId,
+        limit_name: prior?.limit_name ?? limitId,
+        allowed: false,
+        limit_reached: true,
+        used_percent: 100,
+        remaining_percent: 0,
+        reset_at: Math.max(prior?.reset_at ?? 0, nextReset),
+        limit_window_seconds: prior?.limit_window_seconds ?? entry.usage.limit_window_seconds ?? null,
+        secondary_rate_limit: prior?.secondary_rate_limit ?? null,
+      },
+    };
+    entry.cachedQuota = quota;
+    entry.quotaFetchedAt = new Date().toISOString();
+    if (options?.countRequest) this.recordRequestOnly(entry);
+    this.schedulePersist();
   }
-
-  // ── Quota / usage ─────────────────────────────────────────────────
 
   recordEmptyResponse(entryId: string): void {
-    this.registry.recordEmptyResponse(entryId);
+    if (!this.entry || entryId !== ENTRY_ID) return;
+    this.entry.usage.empty_response_count++;
+    this.schedulePersist();
   }
 
   updateCachedQuota(entryId: string, quota: CodexQuota): void {
-    this.registry.updateCachedQuota(entryId, quota);
+    const entry = this.entry;
+    if (!entry || entryId !== ENTRY_ID) return;
+    entry.cachedQuota = {
+      ...quota,
+      credits: quota.credits ?? entry.cachedQuota?.credits,
+      reset_credits_available: quota.reset_credits_available ?? entry.cachedQuota?.reset_credits_available,
+    };
+    entry.quotaFetchedAt = new Date().toISOString();
+    entry.quotaVerifyRequired = false;
+    this.schedulePersist();
   }
 
-  syncRateLimitWindow(
-    entryId: string,
-    newResetAt: number | null,
-    limitWindowSeconds: number | null,
-  ): void {
-    this.registry.syncRateLimitWindow(entryId, newResetAt, limitWindowSeconds);
+  syncRateLimitWindow(entryId: string, newResetAt: number | null, limitWindowSeconds: number | null): void {
+    const entry = this.entry;
+    if (!entry || entryId !== ENTRY_ID || newResetAt == null) return;
+    const usage = entry.usage;
+    const oldResetAt = usage.window_reset_at;
+    if (oldResetAt != null && oldResetAt !== newResetAt) {
+      const windowSec = limitWindowSeconds ?? usage.limit_window_seconds ?? 0;
+      if (Math.abs(newResetAt - oldResetAt) >= (windowSec > 0 ? windowSec * 0.5 : 3600)) {
+        usage.window_request_count = 0;
+        usage.window_input_tokens = 0;
+        usage.window_output_tokens = 0;
+        usage.window_cached_tokens = 0;
+        usage.window_estimated_cost_usd = 0;
+        usage.window_image_input_tokens = 0;
+        usage.window_image_output_tokens = 0;
+        usage.window_image_request_count = 0;
+        usage.window_image_request_failed_count = 0;
+        usage.window_counters_reset_at = new Date().toISOString();
+      }
+    }
+    usage.window_reset_at = newResetAt;
+    if (limitWindowSeconds != null) usage.limit_window_seconds = limitWindowSeconds;
+    this.schedulePersist();
   }
-
-  resetUsage(entryId: string): boolean {
-    return this.registry.resetUsage(entryId);
-  }
-
-  // ── Query ─────────────────────────────────────────────────────────
 
   getAccounts(): AccountInfo[] {
-    return this.registry.getAccounts();
+    return this.entry ? [this.toInfo(this.entry)] : [];
   }
 
   getEntry(entryId: string): AccountEntry | undefined {
-    return this.registry.getEntry(entryId);
+    return entryId === ENTRY_ID ? this.entry ?? undefined : undefined;
   }
 
   getAllEntries(): AccountEntry[] {
-    return this.registry.getAllEntries();
+    return this.entry ? [this.entry] : [];
   }
 
   isAuthenticated(): boolean {
-    return this.registry.isAuthenticated();
+    return this.hasAvailableAccounts();
   }
 
-  /** @deprecated Use getAccounts() instead. */
   getUserInfo(): { email?: string; accountId?: string; planType?: string } | null {
-    return this.registry.getUserInfo();
-  }
-
-  /** @deprecated Use getAccounts() instead. */
-  getProxyApiKey(): string | null {
-    return this.registry.getProxyApiKey();
+    const entry = this.entry;
+    if (!entry) return null;
+    return { email: entry.email ?? undefined, accountId: entry.accountId ?? undefined, planType: entry.planType ?? undefined };
   }
 
   validateProxyApiKey(key: string): boolean {
-    return this.registry.validateProxyApiKey(key);
+    const configured = process.env.PROXY_API_KEY?.trim();
+    return Boolean(configured && safeEqual(key, configured));
   }
 
-  /** @deprecated Use removeAccount() instead. */
-  clearToken(): void {
-    this.lifecycle.clearAllLocks();
-    this.registry.clearToken();
-  }
-
-  getPoolSummary(): {
-    total: number;
-    active: number;
-    expired: number;
-    quota_exhausted: number;
-    rate_limited: number;
-    refreshing: number;
-    disabled: number;
-    banned: number;
-  } {
-    return this.registry.getPoolSummary();
+  getPoolSummary(): { total: number; active: number; expired: number; quota_exhausted: number; rate_limited: number; refreshing: number; disabled: number; banned: number } {
+    const summary = { total: this.entry ? 1 : 0, active: 0, expired: 0, quota_exhausted: 0, rate_limited: 0, refreshing: 0, disabled: 0, banned: 0 };
+    const entry = this.entry;
+    if (!entry) return summary;
+    this.refreshStatus(entry);
+    if (entry.status === "active" && hasReachedCachedQuota(entry)) summary.rate_limited = 1;
+    else summary[entry.status] = 1;
+    return summary;
   }
 
   getCapacitySummary(): AccountCapacitySummary {
-    return this.lifecycle.getCapacitySummary();
-  }
-
-  // ── Persistence ───────────────────────────────────────────────────
-
-  persistNow(): void {
-    this.registry.persistNow();
-  }
-
-  /**
-   * True when account persistence failed to load at startup and
-   * was quarantined. While disabled, all schedulePersist/persistNow calls
-   * are no-ops — in-memory CRUD still works for the running session, but
-   * nothing reaches disk until the user restores a healthy file and
-   * restarts the process. Dashboard surfaces this via the
-   * `persistence_health` field on GET /auth/accounts.
-   */
-  isPersistDisabled(): boolean {
-    return this.registry.isPersistDisabled();
-  }
-
-  /**
-   * Returns a structured health snapshot for the dashboard. `quarantined`
-   * distinguishes the happy case (rename succeeded, user should recover
-   * from the `.bak`) from the rare case where the rename itself failed
-   * (original file still on disk, no `.bak` exists) — the user-facing
-   * recovery instructions differ between the two.
-   */
-  getPersistenceHealth(): PersistenceHealth {
-    if (!this.isPersistDisabled()) return { ok: true };
-    const health = this.persistenceHealth;
-    const store = health?.store ?? "accounts.json";
-    if (health?.quarantined === false) {
-      return {
-        ok: false,
-        reason: "load_failed_unquarantined",
-        quarantined: false,
-        backupPath: null,
-        message:
-          `${store} failed to load at startup. The proxy tried to move it aside but the rename failed — the original file is still on disk. ` +
-          `Auto-save is paused for this session. Inspect data/${store} manually and restart the app once it parses cleanly.`,
-      };
-    }
-    return {
-      ok: false,
-      reason: "load_failed_quarantined",
-      quarantined: true,
-      backupPath: health?.backupPath ?? null,
-      message:
-        `${store} failed to load at startup and was quarantined (see data/ for ${store}.corrupt-*.bak). ` +
-        "Auto-save is paused until you restore the file and restart the app. Imports in this session live in memory only.",
-    };
-  }
-
-  /**
-   * Read a single account's refresh token directly from the active persistence backend.
-   * Used by RefreshScheduler to detect cross-process RT updates before refreshing.
-   * Returns null if not found or on read error.
-   */
-  readEntryRTFromDisk(entryId: string): string | null {
-    return this.registry.readEntryRTFromDisk(entryId);
+    const max = getConfig().auth.max_concurrent_per_account ?? 3;
+    const used = this.activeSlots.length;
+    return { max_concurrent_per_account: max, total_slots: max, used_slots: used, available_slots: Math.max(0, max - used) };
   }
 
   destroy(): void {
-    this.registry.destroy();
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistNow();
+    this.activeSlots = [];
+  }
+
+  private recordRequestOnly(entry: AccountEntry): void {
+    entry.usage.request_count++;
+    entry.usage.window_request_count = (entry.usage.window_request_count ?? 0) + 1;
+    entry.usage.last_used = new Date().toISOString();
+  }
+
+  private emptyQuota(entry: AccountEntry, resetAt: number | null): CodexQuota {
+    return {
+      plan_type: entry.planType ?? "unknown",
+      rate_limit: { allowed: resetAt == null, limit_reached: resetAt != null, used_percent: resetAt == null ? null : 100, reset_at: resetAt, limit_window_seconds: entry.usage.limit_window_seconds ?? null },
+      secondary_rate_limit: null,
+      code_review_rate_limit: null,
+    };
+  }
+
+  private refreshStatus(entry: AccountEntry): void {
+    if (entry.status === "banned" || entry.status === "disabled") return;
+    entry.status = isTokenExpired(entry.token) ? "expired" : "active";
+  }
+
+  private toInfo(entry: AccountEntry): AccountInfo {
+    this.refreshStatus(entry);
+    let expiresAt: string | null = null;
+    try {
+      const payload = JSON.parse(Buffer.from(entry.token.split(".")[1], "base64url").toString("utf-8")) as { exp?: number };
+      if (payload.exp) expiresAt = new Date(payload.exp * 1000).toISOString();
+    } catch {}
+    return {
+      id: entry.id,
+      email: entry.email,
+      accountId: entry.accountId,
+      organizationId: entry.organizationId,
+      accountIdSource: entry.accountIdSource,
+      userId: entry.userId,
+      label: null,
+      codexFingerprintMode: "off",
+      planType: entry.planType,
+      status: entry.status,
+      usage: entry.usage,
+      addedAt: entry.addedAt,
+      expiresAt,
+      quota: entry.cachedQuota ?? undefined,
+      quotaFetchedAt: entry.quotaFetchedAt,
+      quotaVerifyRequired: entry.quotaVerifyRequired,
+    };
+  }
+
+  private schedulePersist(): void {
+    if (this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persistNow();
+    }, 250);
+  }
+
+  private persistNow(): void {
+    const entry = this.entry;
+    if (!entry) return;
+    const filePath = resolve(getDataDir(), STATE_FILE);
+    const tmpPath = `${filePath}.tmp`;
+    try {
+      mkdirSync(dirname(filePath), { recursive: true });
+      writeFileSync(tmpPath, JSON.stringify({ version: 1, usage: entry.usage, cachedQuota: entry.cachedQuota, quotaFetchedAt: entry.quotaFetchedAt } satisfies PersistedAccountState));
+      renameSync(tmpPath, filePath);
+    } catch (error) {
+      console.error(`[Auth] Failed to persist ${STATE_FILE}: ${error instanceof Error ? error.message : error}`);
+    }
   }
 }

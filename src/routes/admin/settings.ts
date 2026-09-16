@@ -1,10 +1,7 @@
 import { Hono } from "hono";
-import { getConnInfo } from "@hono/node-server/conninfo";
-import { getConfig, getLocalConfigPath, reloadAllConfigs, ROTATION_STRATEGIES } from "../../config.js";
+import { getConfig, getLocalConfigPath, reloadAllConfigs } from "../../config.js";
 import { logStore } from "../../logs/store.js";
 import { mutateYaml } from "../../utils/yaml-mutate.js";
-import { isLocalhostRequest } from "../../utils/is-localhost.js";
-import type { AccountPool } from "../../auth/account-pool.js";
 import {
   getRoutableCodexHostModelAllowedModels,
   IMAGE_HOST_MODEL_CLIENT_ID,
@@ -48,75 +45,8 @@ function normalizeModelAliases(input: unknown): {
   return { aliases, error: null };
 }
 
-export function createSettingsRoutes(accountPool?: AccountPool): Hono {
+export function createSettingsRoutes(): Hono {
   const app = new Hono();
-
-
-  // --- Rotation settings ---
-
-  app.get("/admin/rotation-settings", (c) => {
-    const config = getConfig();
-    return c.json({
-      rotation_strategy: config.auth.rotation_strategy,
-    });
-  });
-
-  app.post("/admin/rotation-settings", async (c) => {
-    const body = await c.req.json() as { rotation_strategy?: string };
-    const valid: readonly string[] = ROTATION_STRATEGIES;
-    if (!body.rotation_strategy || !valid.includes(body.rotation_strategy)) {
-      c.status(400);
-      return c.json({ error: `rotation_strategy must be one of: ${ROTATION_STRATEGIES.join(", ")}` });
-    }
-
-    mutateYaml(getLocalConfigPath(), (data) => {
-      if (!data.auth) data.auth = {};
-      (data.auth as Record<string, unknown>).rotation_strategy = body.rotation_strategy;
-    });
-    reloadAllConfigs();
-
-    // Hot-apply the strategy: the pool captures the strategy once at
-    // construction, so without this the change only takes effect after a
-    // restart (the running process would keep the old strategy).
-    accountPool?.setRotationStrategy(body.rotation_strategy as "least_used" | "round_robin" | "sticky");
-
-    const updated = getConfig();
-    return c.json({
-      success: true,
-      rotation_strategy: updated.auth.rotation_strategy,
-    });
-  });
-
-  // --- General settings ---
-
-  app.get("/admin/settings", (c) => {
-    const config = getConfig();
-    return c.json({ proxy_api_key: config.server.proxy_api_key });
-  });
-
-  app.post("/admin/settings", async (c) => {
-    const config = getConfig();
-    const currentKey = config.server.proxy_api_key;
-    const body = await c.req.json() as { proxy_api_key?: string | null };
-    const newKey = body.proxy_api_key === undefined ? currentKey : (body.proxy_api_key || null);
-
-    // Prevent remote sessions from clearing the key (would disable login gate)
-    if (currentKey && !newKey) {
-      const remoteAddr = getConnInfo(c).remote.address ?? "";
-      if (!isLocalhostRequest(remoteAddr)) {
-        c.status(403);
-        return c.json({ error: "Cannot clear API key from remote session — this would disable the login gate" });
-      }
-    }
-
-    mutateYaml(getLocalConfigPath(), (data) => {
-      if (!data.server) data.server = {};
-      (data.server as Record<string, unknown>).proxy_api_key = newKey;
-    });
-    reloadAllConfigs();
-
-    return c.json({ success: true, proxy_api_key: newKey });
-  });
 
   // --- General (server/tls) settings ---
 
@@ -136,9 +66,6 @@ export function createSettingsRoutes(accountPool?: AccountPool): Hono {
       image_host_model_allowed_models: getRoutableCodexHostModelAllowedModels(),
       default_tools: config.model.default_tools,
       model_aliases: config.model.aliases,
-      refresh_enabled: config.auth.refresh_enabled,
-      refresh_margin_seconds: config.auth.refresh_margin_seconds,
-      refresh_concurrency: config.auth.refresh_concurrency,
       max_concurrent_per_account: config.auth.max_concurrent_per_account,
       request_interval_ms: config.auth.request_interval_ms,
       auto_update: config.update.auto_update,
@@ -168,9 +95,6 @@ export function createSettingsRoutes(accountPool?: AccountPool): Hono {
       default_reasoning_effort?: string | null;
       image_host_model?: string;
       model_aliases?: unknown;
-      refresh_enabled?: boolean;
-      refresh_margin_seconds?: number;
-      refresh_concurrency?: number;
       max_concurrent_per_account?: number | null;
       request_interval_ms?: number | null;
       auto_update?: boolean;
@@ -264,20 +188,6 @@ export function createSettingsRoutes(accountPool?: AccountPool): Hono {
       normalizedImageHostModel = resolved;
     }
 
-    if (body.refresh_margin_seconds !== undefined) {
-      if (!Number.isInteger(body.refresh_margin_seconds) || body.refresh_margin_seconds < 0) {
-        c.status(400);
-        return c.json({ error: "refresh_margin_seconds must be an integer >= 0" });
-      }
-    }
-
-    if (body.refresh_concurrency !== undefined) {
-      if (!Number.isInteger(body.refresh_concurrency) || body.refresh_concurrency < 1) {
-        c.status(400);
-        return c.json({ error: "refresh_concurrency must be an integer >= 1" });
-      }
-    }
-
     if (body.max_concurrent_per_account !== undefined && body.max_concurrent_per_account !== null) {
       if (!Number.isInteger(body.max_concurrent_per_account) || body.max_concurrent_per_account < 1) {
         c.status(400);
@@ -361,18 +271,6 @@ export function createSettingsRoutes(accountPool?: AccountPool): Hono {
         if (!data.model) data.model = {};
         (data.model as Record<string, unknown>).aliases = normalizedModelAliases;
       }
-      if (body.refresh_enabled !== undefined) {
-        if (!data.auth) data.auth = {};
-        (data.auth as Record<string, unknown>).refresh_enabled = body.refresh_enabled;
-      }
-      if (body.refresh_margin_seconds !== undefined) {
-        if (!data.auth) data.auth = {};
-        (data.auth as Record<string, unknown>).refresh_margin_seconds = body.refresh_margin_seconds;
-      }
-      if (body.refresh_concurrency !== undefined) {
-        if (!data.auth) data.auth = {};
-        (data.auth as Record<string, unknown>).refresh_concurrency = body.refresh_concurrency;
-      }
       if (body.max_concurrent_per_account !== undefined) {
         if (!data.auth) data.auth = {};
         (data.auth as Record<string, unknown>).max_concurrent_per_account = body.max_concurrent_per_account;
@@ -450,9 +348,6 @@ export function createSettingsRoutes(accountPool?: AccountPool): Hono {
       image_host_model_allowed_models: getRoutableCodexHostModelAllowedModels(),
       default_tools: updated.model.default_tools,
       model_aliases: updated.model.aliases,
-      refresh_enabled: updated.auth.refresh_enabled,
-      refresh_margin_seconds: updated.auth.refresh_margin_seconds,
-      refresh_concurrency: updated.auth.refresh_concurrency,
       max_concurrent_per_account: updated.auth.max_concurrent_per_account,
       request_interval_ms: updated.auth.request_interval_ms,
       auto_update: updated.update.auto_update,

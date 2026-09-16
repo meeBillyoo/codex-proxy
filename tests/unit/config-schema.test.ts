@@ -3,17 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  ConfigSchema,
-  FingerprintSchema,
-  ROTATION_STRATEGIES,
-} from "@src/config-schema.js";
-
-describe("ROTATION_STRATEGIES", () => {
-  it("contains expected values", () => {
-    expect(ROTATION_STRATEGIES).toEqual(["least_used", "round_robin", "sticky"]);
-  });
-});
+import { ConfigSchema, FingerprintSchema } from "@src/config-schema.js";
 
 describe("ConfigSchema", () => {
   it("parses minimal input with all defaults", () => {
@@ -33,8 +23,6 @@ describe("ConfigSchema", () => {
     expect(result.server.host).toBe("127.0.0.1");
     expect(result.server.proxy_api_key).toBeNull();
     expect(result.server.cors_allow_null_origin).toBe(false);
-    expect(result.auth.rotation_strategy).toBe("least_used");
-    expect(result.auth.refresh_concurrency).toBe(2);
     expect(result.auth.max_concurrent_per_account).toBe(3);
     expect(result.auth.request_interval_ms).toBe(50);
     expect(result.model.default).toBe("gpt-5.6-sol");
@@ -64,7 +52,6 @@ describe("ConfigSchema", () => {
     });
     expect(result.official_agent).toEqual({
       enabled: false,
-      api_key: null,
       app_server_url: "ws://127.0.0.1:4500",
       request_timeout_ms: 30000,
       auth: { type: "none" },
@@ -99,15 +86,10 @@ describe("ConfigSchema", () => {
           },
         ],
       },
-      auth: { rotation_strategy: "round_robin", max_concurrent_per_account: null },
+      auth: { max_concurrent_per_account: null },
       server: { port: 3000, proxy_api_key: "sk-test", cors_allow_null_origin: true },
       session: { ttl_minutes: 120 },
       tls: { force_http11: true, health_check_url: "https://my-health.org" },
-      providers: {
-        openai: { api_key: "sk-openai-key" },
-        anthropic: { api_key: "sk-anthropic-key", base_url: "https://my-anthropic.com/v1" },
-        gemini: { api_key: "sk-gemini-key", base_url: "https://my-gemini.com" },
-      },
       quota: { skip_exhausted: false },
       update: { auto_update: false, show_update_dialog: true, allow_prerelease: true },
       ollama: {
@@ -119,7 +101,6 @@ describe("ConfigSchema", () => {
       },
       official_agent: {
         enabled: true,
-        api_key: "agent-key",
         app_server_url: "ws://127.0.0.1:4777",
         request_timeout_ms: 5000,
         auth: { type: "capability_token", token_file: "/tmp/codex-token" },
@@ -150,15 +131,12 @@ describe("ConfigSchema", () => {
         truncation_policy_limit: 4567,
       },
     ]);
-    expect(result.auth.rotation_strategy).toBe("round_robin");
     expect(result.auth.max_concurrent_per_account).toBeNull();
     expect(result.server.port).toBe(3000);
     expect(result.server.proxy_api_key).toBe("sk-test");
     expect(result.server.cors_allow_null_origin).toBe(true);
     expect(result.tls.force_http11).toBe(true);
     expect(result.tls.health_check_url).toBe("https://my-health.org");
-    expect(result.providers?.anthropic?.base_url).toBe("https://my-anthropic.com/v1");
-    expect(result.providers?.gemini?.base_url).toBe("https://my-gemini.com");
     expect(result.quota.skip_exhausted).toBe(false);
     expect(result.update.auto_update).toBe(false);
     expect(result.update.show_update_dialog).toBe(true);
@@ -171,7 +149,6 @@ describe("ConfigSchema", () => {
       disable_vision: true,
     });
     expect(result.official_agent.enabled).toBe(true);
-    expect(result.official_agent.api_key).toBe("agent-key");
     expect(result.official_agent.app_server_url).toBe("ws://127.0.0.1:4777");
     expect(result.official_agent.auth).toEqual({ type: "capability_token", token_file: "/tmp/codex-token" });
   });
@@ -241,23 +218,9 @@ describe("ConfigSchema", () => {
     expect(tooLong.success).toBe(false);
   });
 
-  it("rejects invalid rotation strategy", () => {
-    const result = ConfigSchema.safeParse({
-      api: {}, client: {}, model: {}, auth: { rotation_strategy: "random" }, server: {}, session: {},
-    });
-    expect(result.success).toBe(false);
-  });
-
   it("rejects timeout_seconds < 1", () => {
     const result = ConfigSchema.safeParse({
       api: { timeout_seconds: 0 }, client: {}, model: {}, auth: {}, server: {}, session: {},
-    });
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects refresh_concurrency < 1", () => {
-    const result = ConfigSchema.safeParse({
-      api: {}, client: {}, model: {}, auth: { refresh_concurrency: 0 }, server: {}, session: {},
     });
     expect(result.success).toBe(false);
   });

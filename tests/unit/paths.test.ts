@@ -28,8 +28,11 @@ describe("paths — CLI mode (default)", () => {
   });
 
   it("getDataDir returns cwd/data by default", async () => {
+    const configuredDataDir = process.env.CODEX_PROXY_DATA_DIR;
+    delete process.env.CODEX_PROXY_DATA_DIR;
     const { getDataDir } = await importPaths();
     expect(getDataDir()).toBe(resolve(process.cwd(), "data"));
+    if (configuredDataDir !== undefined) process.env.CODEX_PROXY_DATA_DIR = configuredDataDir;
   });
 
   it("getBinDir returns cwd/bin by default", async () => {

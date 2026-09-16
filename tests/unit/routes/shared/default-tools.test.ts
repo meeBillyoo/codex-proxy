@@ -6,7 +6,6 @@ import {
   normalizeHostedTool,
 } from "../../../../src/routes/shared/default-tools.js";
 import { loadConfig } from "../../../../src/config.js";
-import type { ClientKeyEntry } from "../../../../src/auth/client-key-types.js";
 
 describe("default-tools resolution and merging", () => {
   beforeEach(() => {
@@ -125,12 +124,9 @@ describe("default-tools resolution and merging", () => {
       expect((await resNo.json()).tools).toEqual([]);
     });
 
-    it("inherits global default_tools when clientKey.default_tools is null or undefined", async () => {
+    it("uses global default_tools for the proxy API key", async () => {
       const app = new Hono();
       app.get("/test", (c) => {
-        const clientKey: Partial<ClientKeyEntry> = { id: "ck_1", default_tools: null };
-        c.set("authRole", "client_key");
-        c.set("clientKey", clientKey as ClientKeyEntry);
         const tools = resolveDefaultTools(c, { allowUnauthenticated: false, globalDefaultTools: ["web_search"] });
         return c.json({ tools });
       });
@@ -139,35 +135,5 @@ describe("default-tools resolution and merging", () => {
       expect((await res.json()).tools).toEqual(["web_search"]);
     });
 
-    it("uses clientKey.default_tools override when configured", async () => {
-      const app = new Hono();
-      app.get("/test", (c) => {
-        const clientKey: Partial<ClientKeyEntry> = {
-          id: "ck_1",
-          default_tools: ["web_search", "image_generation"],
-        };
-        c.set("authRole", "client_key");
-        c.set("clientKey", clientKey as ClientKeyEntry);
-        const tools = resolveDefaultTools(c, { allowUnauthenticated: false, globalDefaultTools: [] });
-        return c.json({ tools });
-      });
-
-      const res = await app.request("/test");
-      expect((await res.json()).tools).toEqual(["web_search", "image_generation"]);
-    });
-
-    it("respects clientKey.default_tools = [] to disable tools for this specific key", async () => {
-      const app = new Hono();
-      app.get("/test", (c) => {
-        const clientKey: Partial<ClientKeyEntry> = { id: "ck_1", default_tools: [] };
-        c.set("authRole", "client_key");
-        c.set("clientKey", clientKey as ClientKeyEntry);
-        const tools = resolveDefaultTools(c, { allowUnauthenticated: false, globalDefaultTools: ["web_search"] });
-        return c.json({ tools });
-      });
-
-      const res = await app.request("/test");
-      expect((await res.json()).tools).toEqual([]);
-    });
   });
 });

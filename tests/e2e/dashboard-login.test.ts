@@ -64,6 +64,7 @@ function extractSession(setCookie: string | null): string | null {
 
 beforeEach(() => {
   _resetRateLimitForTest();
+  process.env.PROXY_API_KEY = "secret123";
   mockConfig.server.proxy_api_key = "secret123";
   mockConfig.server.trust_proxy = false;
 });
@@ -71,14 +72,12 @@ beforeEach(() => {
 // ── GET /auth/dashboard-status ────────────────────────────────────
 
 describe("GET /auth/dashboard-status", () => {
-  it("returns required:false when no proxy_api_key configured", async () => {
-    mockConfig.server.proxy_api_key = null;
-
+  it("always requires dashboard authentication", async () => {
     const res = await app.request("/auth/dashboard-status");
     expect(res.status).toBe(200);
     const body = await res.json() as { required: boolean; authenticated: boolean };
-    expect(body.required).toBe(false);
-    expect(body.authenticated).toBe(true);
+    expect(body.required).toBe(true);
+    expect(body.authenticated).toBe(false);
   });
 
   it("returns required:true, authenticated:false when key set but no session", async () => {

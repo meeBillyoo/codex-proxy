@@ -17,8 +17,6 @@ vi.mock("@src/config.js", () => ({
       suppress_desktop_directives: false,
     },
     auth: {
-      jwt_token: undefined,
-      rotation_strategy: "least_used",
       rate_limit_backoff_seconds: 60,
     },
   })),

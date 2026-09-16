@@ -24,13 +24,8 @@ import { randomUUID } from "crypto";
 import {
   handleProxyRequest,
 } from "./shared/proxy-handler.js";
-import { handleDirectRequest } from "./shared/direct-request-handler.js";
 import type { FormatAdapter } from "./shared/proxy-handler-types.js";
 import { extractAnthropicClientConversationId } from "./shared/anthropic-session-id.js";
-import type { UpstreamRouter } from "../proxy/upstream-router.js";
-import type { ClientKeyPool } from "../auth/client-key-pool.js";
-import type { FallbackUpstreamStore } from "../auth/fallback-upstream.js";
-import { validateClientKeyModel } from "./shared/proxy-handler-utils.js";
 import { summarizeRequestForLog } from "../logs/request-summary.js";
 import { resolveDefaultTools, mergeDefaultTools } from "./shared/default-tools.js";
 import { isRecord } from "../translation/shared-utils.js";
@@ -136,13 +131,10 @@ export function createMessagesRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
   proxyPool?: ProxyPool,
-  upstreamRouter?: UpstreamRouter,
-  clientKeyPool?: ClientKeyPool,
-  fallbackUpstream?: FallbackUpstreamStore,
 ): Hono {
   const app = new Hono();
 
-  app.post("/v1/messages/count_tokens", apiKeyAuth(accountPool, clientKeyPool), async (c) => {
+  app.post("/v1/messages/count_tokens", apiKeyAuth(accountPool), async (c) => {
     const body = await c.req.json();
 
     const parsed = AnthropicCountTokensRequestSchema.safeParse(body);
@@ -153,17 +145,10 @@ export function createMessagesRoutes(
       );
     }
 
-    // Warning 7: Validate model whitelist on /v1/messages/count_tokens
-    const modelCheck = validateClientKeyModel(c, parsed.data.model);
-    if (!modelCheck.allowed) {
-      c.status(403);
-      return c.json(makeError("permission_error", modelCheck.message || "Model not allowed"));
-    }
-
     return c.json({ input_tokens: estimateCountTokens(parsed.data) });
   });
 
-  app.post("/v1/messages", apiKeyAuth(accountPool, clientKeyPool), async (c) => {
+  app.post("/v1/messages", apiKeyAuth(accountPool), async (c) => {
     // Parse request
     const body = await c.req.json();
     const parsed = AnthropicMessagesRequestSchema.safeParse(body);
@@ -175,17 +160,7 @@ export function createMessagesRoutes(
     }
     const req = parsed.data;
 
-    const modelCheck = validateClientKeyModel(c, req.model);
-    if (!modelCheck.allowed) {
-      c.status(403);
-      return c.json(makeError("permission_error", modelCheck.message || "Model not allowed"));
-    }
-
-    const routeMatch = upstreamRouter?.resolveMatch(req.model);
-    const allowUnauthenticated = routeMatch?.kind === "api-key" || routeMatch?.kind === "adapter";
-
-    // Auth check (a configured fallback upstream apikey is a valid last-resort).
-    if (!allowUnauthenticated && !accountPool.isAuthenticated() && !fallbackUpstream?.isConfigured()) {
+    if (!accountPool.isAuthenticated()) {
       c.status(401);
       return c.json(
         makeError("authentication_error", "Not authenticated. Please login first at /"),
@@ -198,19 +173,17 @@ export function createMessagesRoutes(
     );
 
     const defaultTools = resolveDefaultTools(c, {
-      allowUnauthenticated,
+      allowUnauthenticated: false,
       fallbackDefaultTools: ["web_search"],
     });
 
     const requestId = c.get("requestId") ?? randomUUID().slice(0, 8);
     const codexRequest = translateAnthropicToCodexRequest(req, undefined, {
       injectHostedWebSearch: false,
-      mapClaudeCodeWebSearch: !allowUnauthenticated && clientConversationId !== null,
+      mapClaudeCodeWebSearch: clientConversationId !== null,
       requestId,
     });
-    if (!allowUnauthenticated) {
-      codexRequest.useWebSocket = true;
-    }
+    codexRequest.useWebSocket = true;
     if (defaultTools.length > 0) {
       codexRequest.tools = mergeDefaultTools(codexRequest.tools, defaultTools);
     }
@@ -239,17 +212,7 @@ export function createMessagesRoutes(
       }),
     });
 
-    if (routeMatch?.kind === "api-key" || routeMatch?.kind === "adapter") {
-      const directModel = routeMatch.resolvedModel ?? req.model;
-      const directReq = {
-        ...proxyReq,
-        model: directModel,
-        codexRequest: { ...codexRequest, model: directModel },
-      };
-      return handleDirectRequest({ c, upstream: routeMatch.adapter, req: directReq, fmt });
-    }
-
-    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt, proxyPool, fallbackUpstream });
+    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt, proxyPool });
   });
 
   return app;

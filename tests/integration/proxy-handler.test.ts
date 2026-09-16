@@ -380,6 +380,7 @@ describe("proxy-handler integration", () => {
     const res = await app.request("/test", { method: "POST" });
     expect(res.status).toBe(413);
     expect(createSpy).not.toHaveBeenCalled();
+    expect(accountPool.release).toHaveBeenCalledTimes(1);
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
 
     const body = await res.json();
@@ -531,7 +532,8 @@ describe("proxy-handler integration", () => {
       retryAfterSec: 123,
       countRequest: true,
     });
-    expect(accountPool.release).toHaveBeenCalledTimes(1);
+    expect(accountPool.release).toHaveBeenCalledTimes(2);
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
     expect(accountPool.release).toHaveBeenCalledWith("e2", {
       input_tokens: 10,
       output_tokens: 20,
@@ -611,7 +613,9 @@ describe("proxy-handler integration", () => {
     expect(accountPool.applyRateLimit429).toHaveBeenCalledTimes(2);
     expect(accountPool.applyRateLimit429).toHaveBeenCalledWith("e1", { retryAfterSec: 100, countRequest: true });
     expect(accountPool.applyRateLimit429).toHaveBeenCalledWith("e2", { retryAfterSec: 100, countRequest: true });
-    expect(accountPool.release).not.toHaveBeenCalled();
+    expect(accountPool.release).toHaveBeenCalledTimes(2);
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
+    expect(accountPool.release).toHaveBeenCalledWith("e2", undefined);
   });
 
   // 5. CodexApiError 4xx → formatError with status code
@@ -689,7 +693,7 @@ describe("proxy-handler integration", () => {
     expect(res.status).toBe(403);
 
     expect(accountPool.markStatus).toHaveBeenCalledWith("e1", "banned");
-    expect(accountPool.release).not.toHaveBeenCalled();
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
   // 5c. CF 403 (Cloudflare challenge) → cooldown + fallback retry, NOT ban
@@ -966,7 +970,7 @@ describe("proxy-handler integration", () => {
     expect(res.status).toBe(502);
 
     const body = await res.json();
-    expect(body.message).toContain("no other accounts are available");
+    expect(body.message).toContain("current CLI account is unavailable");
     expect(accountPool.recordEmptyResponse).toHaveBeenCalledWith("e1");
     expect(accountPool.release).toHaveBeenCalledWith("e1", {
       input_tokens: 1,
@@ -1051,7 +1055,7 @@ describe("proxy-handler integration", () => {
     expect(res.status).toBe(401);
 
     expect(accountPool.markStatus).toHaveBeenCalledWith("e1", "expired");
-    expect(accountPool.release).not.toHaveBeenCalled();
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
   // 15. 429 with no available accounts → descriptive "all accounts exhausted" error

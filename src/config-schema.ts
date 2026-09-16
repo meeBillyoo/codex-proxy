@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-export const ROTATION_STRATEGIES = ["least_used", "round_robin", "sticky"] as const;
-
 // Note: discriminatedUnion does not accept ZodEffects branches, so the
 // presence-of-secret-material checks are applied at the union level via
 // superRefine rather than per-branch.
@@ -112,20 +110,9 @@ export const ConfigSchema = z.object({
       .default("instructions"),
   }),
   auth: z.object({
-    jwt_token: z.string().nullable().default(null),
-    chatgpt_oauth: z.boolean().default(true),
-    refresh_margin_seconds: z.number().min(0).default(300),
-    refresh_enabled: z.boolean().default(true),
-    refresh_concurrency: z.number().int().min(1).default(2),
     max_concurrent_per_account: z.number().int().min(1).nullable().default(3),
     request_interval_ms: z.number().int().min(0).nullable().default(50),
-    rotation_strategy: z.enum(ROTATION_STRATEGIES).default("least_used"),
-    /** Preferred plan-type ordering for account selection (e.g. ["plus","team","free"]). */
-    tier_priority: z.array(z.string()).nullable().default(null),
     rate_limit_backoff_seconds: z.number().min(1).default(60),
-    oauth_client_id: z.string().default("app_EMoamEEZ73f0CkXaXp7hrann"),
-    oauth_auth_endpoint: z.string().default("https://auth.openai.com/oauth/authorize"),
-    oauth_token_endpoint: z.string().default("https://auth.openai.com/oauth/token"),
   }),
   server: z.object({
     host: z.string().default("127.0.0.1"),
@@ -145,10 +132,6 @@ export const ConfigSchema = z.object({
     })).default([]),
     cors_allow_null_origin: z.boolean().default(false),
   }),
-  api_keys: z.object({
-    /** Daily background refresh of API key memo model lists. */
-    memo_auto_refresh: z.boolean().default(true),
-  }).default({}),
   logs: z.object({
     enabled: z.boolean().default(false),
     capacity: z.number().int().min(1).default(2000),
@@ -218,39 +201,12 @@ export const ConfigSchema = z.object({
    * including the official Chrome/browser automation plugin. */
   official_agent: z.object({
     enabled: z.boolean().default(false),
-    api_key: z.string().trim().min(1).nullable().default(null),
     app_server_url: z.string().trim().refine(isWebSocketUrl, {
       message: "app_server_url must be a ws:// or wss:// URL",
     }).default("ws://127.0.0.1:4500"),
     request_timeout_ms: z.number().int().min(1000).max(300000).default(30000),
     auth: OfficialAgentAuthSchema.default({ type: "none" }),
   }).default({}),
-  /** Third-party API provider keys for multi-backend routing. */
-  providers: z.object({
-    openai: z.object({
-      api_key: z.string(),
-      base_url: z.string().default("https://api.openai.com/v1"),
-    }).optional(),
-    anthropic: z.object({
-      api_key: z.string(),
-      base_url: z.string().optional(),
-    }).optional(),
-    gemini: z.object({
-      api_key: z.string(),
-      base_url: z.string().optional(),
-    }).optional(),
-    /** OpenAI-compatible third-party providers (Groq, DeepSeek, Together, etc.). */
-    custom: z.record(
-      z.string(),
-      z.object({
-        api_key: z.string(),
-        base_url: z.string(),
-        models: z.array(z.string()).default([]),
-      }),
-    ).default({}),
-  }).default({}),
-  /** Explicit model → provider name routing table. */
-  model_routing: z.record(z.string(), z.string()).default({}),
 });
 
 export type AppConfig = z.infer<typeof ConfigSchema>;

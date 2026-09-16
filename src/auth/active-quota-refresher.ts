@@ -63,12 +63,6 @@ export class ActiveQuotaRefresher {
 
   start(): void {
     this.stopped = false;
-    const config = getConfig();
-    if (config.auth.refresh_enabled === false) {
-      console.log("[ActiveQuotaRefresher] Auto-refresh disabled in config.");
-      return;
-    }
-
     this.scheduleNext(this.resolveIntervals().tickMs);
     console.log("[ActiveQuotaRefresher] Active Quota Refresher started");
   }

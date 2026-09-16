@@ -19,7 +19,6 @@ import {
   makeErrorTransportResponse,
 } from "@helpers/e2e-setup.js";
 import { buildTextStreamChunks } from "@helpers/sse.js";
-import { createValidJwt } from "@helpers/jwt.js";
 
 import { Hono } from "hono";
 import { requestId } from "@src/middleware/request-id.js";
@@ -47,13 +46,7 @@ function buildApp(opts?: { noAccount?: boolean }): TestContext {
   const cookieJar = new CookieJar();
   const proxyPool = new ProxyPool();
 
-  if (!opts?.noAccount) {
-    accountPool.addAccount(createValidJwt({
-      accountId: "acct-e2e-msg",
-      email: "msg@test.com",
-      planType: "plus",
-    }));
-  }
+  if (opts?.noAccount) vi.spyOn(accountPool, "isAuthenticated").mockReturnValue(false);
 
   const app = new Hono();
   app.use("*", requestId);
@@ -66,6 +59,7 @@ function buildApp(opts?: { noAccount?: boolean }): TestContext {
 }
 
 beforeEach(() => {
+  process.env.PROXY_API_KEY = "master-key-123";
   resetTransportState();
   setTransportPost(async () =>
     makeTransportResponse(buildTextStreamChunks("resp_msg_1", "Hello!")),
@@ -83,7 +77,7 @@ afterEach(() => {
 function messagesRequest(body: unknown) {
   return ctx.app.request("/v1/messages", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
     body: JSON.stringify(body),
   });
 }
@@ -91,7 +85,7 @@ function messagesRequest(body: unknown) {
 function countTokensRequest(body: unknown) {
   return ctx.app.request("/v1/messages/count_tokens?beta=true", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
     body: JSON.stringify(body),
   });
 }
@@ -154,7 +148,7 @@ describe("E2E: POST /v1/messages", () => {
     try {
       const res = await noAuth.app.request("/v1/messages/count_tokens", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
         body: JSON.stringify({
           model: "gpt-5.5",
           messages: [{ role: "user", content: "count only" }],
@@ -237,6 +231,7 @@ describe("E2E: POST /v1/messages", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: "Bearer master-key-123",
         "x-claude-code-session-id": "claude-code-session-123",
       },
       body: JSON.stringify(defaultBody({
@@ -301,7 +296,7 @@ describe("E2E: POST /v1/messages", () => {
     try {
       const res = await noAuth.app.request("/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Authorization: "Bearer master-key-123" },
         body: JSON.stringify(defaultBody()),
       });
       expect(res.status).toBe(401);

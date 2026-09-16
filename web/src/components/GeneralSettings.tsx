@@ -25,9 +25,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
   const [draftDefaultModel, setDraftDefaultModel] = useState<string | null>(null);
   const [draftImageHostModel, setDraftImageHostModel] = useState<string | null>(null);
   const [draftReasoningEffort, setDraftReasoningEffort] = useState<string | null>(null);
-  const [draftRefreshEnabled, setDraftRefreshEnabled] = useState<boolean | null>(null);
-  const [draftRefreshMargin, setDraftRefreshMargin] = useState<string | null>(null);
-  const [draftRefreshConcurrency, setDraftRefreshConcurrency] = useState<string | null>(null);
   const [draftMaxConcurrent, setDraftMaxConcurrent] = useState<string | null>(null);
   const [draftRequestInterval, setDraftRequestInterval] = useState<string | null>(null);
   const [draftUsageHistoryRetention, setDraftUsageHistoryRetention] = useState<string | null>(null);
@@ -62,9 +59,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
   const currentImageHostModel = gs.data?.image_host_model ?? "";
   const currentImageHostModelAllowedModels = gs.data?.image_host_model_allowed_models ?? [];
   const currentReasoningEffort = gs.data?.default_reasoning_effort ?? "";
-  const currentRefreshEnabled = gs.data?.refresh_enabled ?? true;
-  const currentRefreshMargin = gs.data?.refresh_margin_seconds ?? 300;
-  const currentRefreshConcurrency = gs.data?.refresh_concurrency ?? 2;
   const currentMaxConcurrent = gs.data?.max_concurrent_per_account ?? 3;
   const currentRequestInterval = gs.data?.request_interval_ms ?? 50;
   const currentUsageHistoryRetention = gs.data?.usage_history_retention_days ?? null;
@@ -84,9 +78,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
   const displayDefaultModel = draftDefaultModel ?? currentDefaultModel;
   const displayImageHostModel = draftImageHostModel ?? currentImageHostModel;
   const displayReasoningEffort = draftReasoningEffort ?? currentReasoningEffort;
-  const displayRefreshEnabled = draftRefreshEnabled ?? currentRefreshEnabled;
-  const displayRefreshMargin = draftRefreshMargin ?? String(currentRefreshMargin);
-  const displayRefreshConcurrency = draftRefreshConcurrency ?? String(currentRefreshConcurrency);
   const displayMaxConcurrent = draftMaxConcurrent ?? String(currentMaxConcurrent);
   const displayRequestInterval = draftRequestInterval ?? String(currentRequestInterval);
   const displayUsageHistoryRetention = draftUsageHistoryRetention ?? (currentUsageHistoryRetention === null ? "" : String(currentUsageHistoryRetention));
@@ -181,31 +172,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
     if (draftReasoningEffort === null) return;
     saveSingleField("default_reasoning_effort", { default_reasoning_effort: draftReasoningEffort === "" ? null : draftReasoningEffort }, () => setDraftReasoningEffort(null));
   }, [draftReasoningEffort, saveSingleField]);
-
-  const handleSaveRefreshEnabled = useCallback(() => {
-    if (draftRefreshEnabled === null) return;
-    saveSingleField("refresh_enabled", { refresh_enabled: draftRefreshEnabled }, () => setDraftRefreshEnabled(null));
-  }, [draftRefreshEnabled, saveSingleField]);
-
-  const handleSaveRefreshMargin = useCallback(() => {
-    if (draftRefreshMargin === null) return;
-    const val = parseInt(draftRefreshMargin, 10);
-    if (isNaN(val) || val < 0) {
-      setFieldErrors((prev) => ({ ...prev, refresh_margin_seconds: t("settingErrorInvalidNumber") }));
-      return;
-    }
-    saveSingleField("refresh_margin_seconds", { refresh_margin_seconds: val }, () => setDraftRefreshMargin(null));
-  }, [draftRefreshMargin, saveSingleField, t]);
-
-  const handleSaveRefreshConcurrency = useCallback(() => {
-    if (draftRefreshConcurrency === null) return;
-    const val = parseInt(draftRefreshConcurrency, 10);
-    if (isNaN(val) || val < 1) {
-      setFieldErrors((prev) => ({ ...prev, refresh_concurrency: t("settingErrorInvalidNumber") }));
-      return;
-    }
-    saveSingleField("refresh_concurrency", { refresh_concurrency: val }, () => setDraftRefreshConcurrency(null));
-  }, [draftRefreshConcurrency, saveSingleField, t]);
 
   const handleSaveMaxConcurrent = useCallback(() => {
     if (draftMaxConcurrent === null) return;
@@ -556,75 +522,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
         </div>
 
         <div class="px-5 py-2">
-          {/* Auto-refresh Tokens */}
-          <SettingItemControl
-            label={t("generalSettingsRefreshEnabled")}
-            hint={t("generalSettingsRefreshEnabledHint")}
-            isDirty={draftRefreshEnabled !== null && draftRefreshEnabled !== currentRefreshEnabled}
-            saving={!!savingFields.refresh_enabled}
-            saved={savedFields.refresh_enabled}
-            error={fieldErrors.refresh_enabled}
-            requiresRestart={false}
-            layout="inline"
-            onSave={handleSaveRefreshEnabled}
-          >
-            <input
-              type="checkbox"
-              id="refresh-enabled"
-              checked={displayRefreshEnabled}
-              onChange={(e) => setDraftRefreshEnabled((e.target as HTMLInputElement).checked)}
-              class="w-4 h-4 rounded border-gray-300 dark:border-border-dark text-primary focus:ring-primary cursor-pointer"
-            />
-            <label for="refresh-enabled" class="text-xs font-semibold text-slate-700 dark:text-text-main cursor-pointer">
-              {t("generalSettingsRefreshEnabled")}
-            </label>
-          </SettingItemControl>
-
-          {/* Refresh Margin */}
-          <SettingItemControl
-            label={t("generalSettingsRefreshMargin")}
-            hint={t("generalSettingsRefreshMarginHint")}
-            isDirty={draftRefreshMargin !== null && draftRefreshMargin !== String(currentRefreshMargin)}
-            saving={!!savingFields.refresh_margin_seconds}
-            saved={savedFields.refresh_margin_seconds}
-            error={fieldErrors.refresh_margin_seconds}
-            requiresRestart={false}
-            onSave={handleSaveRefreshMargin}
-          >
-            <div class="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                class={`${inputCls} max-w-[160px]`}
-                value={displayRefreshMargin}
-                onInput={(e) => setDraftRefreshMargin((e.target as HTMLInputElement).value)}
-                onKeyDown={(e) => { if (e.key === "Enter") handleSaveRefreshMargin(); }}
-              />
-              <span class="text-xs text-slate-500 dark:text-text-dim">s</span>
-            </div>
-          </SettingItemControl>
-
-          {/* Refresh Concurrency */}
-          <SettingItemControl
-            label={t("generalSettingsRefreshConcurrency")}
-            hint={t("generalSettingsRefreshConcurrencyHint")}
-            isDirty={draftRefreshConcurrency !== null && draftRefreshConcurrency !== String(currentRefreshConcurrency)}
-            saving={!!savingFields.refresh_concurrency}
-            saved={savedFields.refresh_concurrency}
-            error={fieldErrors.refresh_concurrency}
-            requiresRestart={false}
-            onSave={handleSaveRefreshConcurrency}
-          >
-            <input
-              type="number"
-              min="1"
-              class={`${inputCls} max-w-[160px]`}
-              value={displayRefreshConcurrency}
-              onInput={(e) => setDraftRefreshConcurrency((e.target as HTMLInputElement).value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleSaveRefreshConcurrency(); }}
-            />
-          </SettingItemControl>
-
           {/* Max Concurrent Per Account */}
           <SettingItemControl
             label={t("generalSettingsMaxConcurrent")}

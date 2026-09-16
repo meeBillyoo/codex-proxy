@@ -1,6 +1,4 @@
-/**
- * Data models for multi-account management.
- */
+/** Data models for the single Codex CLI account runtime. */
 
 export type AccountStatus =
   | "active"
@@ -77,7 +75,6 @@ export interface AccountEntry {
   /** Account-scoped Codex session convergence. Explicit opt-in; legacy/missing values are off. */
   codexFingerprintMode?: CodexFingerprintMode;
   planType: string | null;
-  proxyApiKey: string;
   status: AccountStatus;
   usage: AccountUsage;
   addedAt: string;

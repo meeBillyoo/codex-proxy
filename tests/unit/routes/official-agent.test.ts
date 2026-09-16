@@ -54,6 +54,7 @@ function makeApp(bridge: CodexAppServerBridge): Hono {
 describe("official agent routes", () => {
   beforeEach(() => {
     resetConfigForTesting();
+    process.env.PROXY_API_KEY = "agent-key";
   });
 
   it("returns 503 when official agent bridge is disabled", async () => {
@@ -78,7 +79,8 @@ describe("official agent routes", () => {
     expect(res.status).toBe(401);
   });
 
-  it("rejects official agent requests when the official-agent API key is not configured", async () => {
+  it("rejects official agent requests when PROXY_API_KEY is not configured", async () => {
+    delete process.env.PROXY_API_KEY;
     setConfigForTesting(ConfigSchema.parse({
       api: {}, client: {}, model: {}, auth: {}, server: { proxy_api_key: "proxy-key" }, session: {},
       official_agent: { enabled: true },
@@ -86,16 +88,16 @@ describe("official agent routes", () => {
 
     const res = await makeApp(new FakeBridge()).request("/official-agent/apps");
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(503);
     expect(await res.json()).toEqual({
       error: {
-        code: "official_agent_requires_api_key",
-        message: "Official Codex app-server bridge requires official_agent.api_key",
+        code: "proxy_api_key_missing",
+        message: "PROXY_API_KEY is required",
       },
     });
   });
 
-  it("does not accept the general proxy API key for official-agent requests", async () => {
+  it("uses the same PROXY_API_KEY as the proxy endpoints", async () => {
     setConfigForTesting(ConfigSchema.parse({
       api: {}, client: {}, model: {}, auth: {}, session: {},
       server: { proxy_api_key: "proxy-key" },
@@ -103,10 +105,10 @@ describe("official agent routes", () => {
     }));
 
     const res = await makeApp(new FakeBridge()).request("/official-agent/apps", {
-      headers: { Authorization: "Bearer proxy-key" },
+      headers: { Authorization: "Bearer agent-key" },
     });
 
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
   });
 
   it("lists apps through the app-server bridge", async () => {

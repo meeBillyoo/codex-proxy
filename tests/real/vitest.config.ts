@@ -16,6 +16,5 @@ export default defineConfig({
     testTimeout: 60_000,
     pool: "forks",
     poolOptions: { forks: { maxForks: 1 } },
-    globalSetup: [resolve(__dirname, "global-setup.ts")],
   },
 });

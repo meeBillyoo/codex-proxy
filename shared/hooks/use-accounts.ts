@@ -1,451 +1,68 @@
-import { useState, useEffect, useCallback, useRef } from "preact/hooks";
-import type { Account, FallbackUpstreamPublic } from "../types";
-import {
-  accountExportDownloadName,
-  buildAccountExportUrl,
-  prepareAccountImportRequest,
-  type AccountExportFormat,
-} from "../account-transfer-client";
+import { useCallback, useEffect, useState } from "preact/hooks";
+import type { Account } from "../types";
 
-export interface PersistenceHealth {
-  ok: boolean;
-  reason?: string;
-  message?: string;
+interface AccountResponse {
+  account: Account;
+  auth_file: string;
 }
 
 export function useAccounts() {
-  const [list, setList] = useState<Account[]>([]);
+  const [account, setAccount] = useState<Account | null>(null);
+  const [authFile, setAuthFile] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [addVisible, setAddVisible] = useState(false);
-  const [addInfo, setAddInfo] = useState("");
-  const [addError, setAddError] = useState("");
-  const [addAuthUrl, setAddAuthUrl] = useState("");
-  const [fallbackUpstream, setFallbackUpstream] = useState<FallbackUpstreamPublic | null>(null);
-  const [fallbackActive, setFallbackActive] = useState(false);
-  const [persistenceHealth, setPersistenceHealth] = useState<PersistenceHealth>({ ok: true });
-  const addCleanupRef = useRef<(() => void) | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  const loadAccounts = useCallback(async () => {
-    setRefreshing(true);
+  const load = useCallback(async () => {
     try {
-      const resp = await fetch("/auth/accounts?quota=true");
-      const data = await resp.json();
-      setList(data.accounts || []);
-      if (data.fallback_upstream && typeof data.fallback_upstream === "object") {
-        setFallbackUpstream(data.fallback_upstream as FallbackUpstreamPublic);
-      } else {
-        setFallbackUpstream(null);
-      }
-      if (data.persistence_health && typeof data.persistence_health === "object") {
-        setPersistenceHealth(data.persistence_health as PersistenceHealth);
-      }
-      setLastUpdated(new Date());
-    } catch {
-      setList([]);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadAccounts();
-  }, [loadAccounts]);
-
-  // Auto-poll cached quota every 30s
-  useEffect(() => {
-    const timer = setInterval(() => loadAccounts(), 30_000);
-    return () => clearInterval(timer);
-  }, [loadAccounts]);
-
-  // Fast-poll the lightweight fallback status so the dashboard indicator
-  // flashes promptly when requests switch to a fallback and reverts after.
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const resp = await fetch("/auth/fallback-upstream/status");
-        if (resp.ok) {
-          const data = await resp.json();
-          setFallbackActive(Boolean(data.active));
-        }
-      } catch { /* ignore */ }
-    };
-    load();
-    const timer = setInterval(load, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Listen for OAuth callback success
-  useEffect(() => {
-    const handler = async (event: MessageEvent) => {
-      if (event.data?.type === "oauth-callback-success") {
-        setAddVisible(false);
-        setAddInfo("accountAdded");
-        await loadAccounts();
-      }
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, [loadAccounts]);
-
-  const startAdd = useCallback(async () => {
-    setAddInfo("");
-    setAddError("");
-    setAddAuthUrl("");
-    try {
-      const resp = await fetch("/auth/login-start", { method: "POST" });
-      const data = await resp.json();
-      if (!resp.ok || !data.authUrl) {
-        throw new Error(data.error || "failedStartLogin");
-      }
-      // Show the dialog with the auth URL first — the user decides when to
-      // open it (via the "Open URL" button), instead of popping a window
-      // immediately.
-      setAddAuthUrl(data.authUrl);
-      setAddVisible(true);
-
-      // Poll for new account + focus/visibility detection
-      const prevResp = await fetch("/auth/accounts");
-      const prevData = await prevResp.json();
-      const prevCount = prevData.accounts?.length || 0;
-
-      let checking = false;
-      const checkForNewAccount = async () => {
-        if (checking) return;
-        checking = true;
-        try {
-          const r = await fetch("/auth/accounts");
-          const d = await r.json();
-          if ((d.accounts?.length || 0) > prevCount) {
-            cleanup();
-            setAddVisible(false);
-            setAddInfo("accountAdded");
-            await loadAccounts();
-          }
-        } catch {} finally {
-          checking = false;
-        }
-      };
-
-      // Focus event — check immediately when window regains focus
-      const onFocus = () => { checkForNewAccount(); };
-      window.addEventListener("focus", onFocus);
-
-      // Visibility change — check when tab becomes visible
-      const onVisible = () => {
-        if (document.visibilityState === "visible") checkForNewAccount();
-      };
-      document.addEventListener("visibilitychange", onVisible);
-
-      // Interval polling as fallback
-      const pollTimer = setInterval(checkForNewAccount, 2000);
-
-      const cleanup = () => {
-        clearInterval(pollTimer);
-        window.removeEventListener("focus", onFocus);
-        document.removeEventListener("visibilitychange", onVisible);
-        addCleanupRef.current = null;
-      };
-      addCleanupRef.current = cleanup;
-      setTimeout(cleanup, 5 * 60 * 1000);
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : "failedStartLogin");
-    }
-  }, [loadAccounts]);
-
-  const cancelAdd = useCallback(() => {
-    addCleanupRef.current?.();
-    setAddVisible(false);
-    setAddInfo("");
-    setAddError("");
-    setAddAuthUrl("");
-  }, []);
-
-  const submitRelay = useCallback(
-    async (callbackUrl: string) => {
-      setAddInfo("");
-      setAddError("");
-      if (!callbackUrl.trim()) {
-        setAddError("pleasePassCallback");
+      const response = await fetch("/auth/account");
+      const data = await response.json();
+      setAuthFile(data.auth_file ?? "");
+      if (!response.ok) {
+        setAccount(null);
+        setError(data.error ?? `HTTP ${response.status}`);
         return;
       }
-      try {
-        const resp = await fetch("/auth/code-relay", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ callbackUrl }),
-        });
-        const data = await resp.json();
-        if (resp.ok && data.success) {
-          setAddVisible(false);
-          setAddInfo("accountAdded");
-          await loadAccounts();
-        } else {
-          setAddError(data.error || "failedExchangeCode");
-        }
-      } catch (err) {
-        setAddError(
-          "networkError" + (err instanceof Error ? err.message : String(err))
-        );
-      }
-    },
-    [loadAccounts]
-  );
-
-  const addByRefreshToken = useCallback(async (refreshToken: string): Promise<string | null> => {
-    setAddInfo("");
-    setAddError("");
-    try {
-      const resp = await fetch("/auth/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) {
-        const msg = data.error || "Failed to add account";
-        setAddError(msg);
-        return msg;
-      }
-      setAddInfo("accountAdded");
-      await loadAccounts();
-      return null;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setAddError(msg);
-      return msg;
-    }
-  }, [loadAccounts]);
-
-  // ── Fallback upstream apikey (single, last-resort) ──────────────
-
-  const refreshFallbackUpstream = useCallback(async () => {
-    try {
-      const resp = await fetch("/auth/fallback-upstream");
-      const data = await resp.json();
-      setFallbackUpstream(data.config ?? null);
-    } catch {
-      // ignore
+      setAccount((data as AccountResponse).account);
+      setError(null);
+      setLastUpdated(new Date());
+    } catch (cause) {
+      setAccount(null);
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setLoading(false);
     }
   }, []);
 
-  const addFallbackUpstream = useCallback(async (baseUrl: string, apiKey: string): Promise<string | null> => {
+  const reload = useCallback(async () => {
+    setRefreshing(true);
     try {
-      const resp = await fetch("/auth/fallback-upstream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl, apiKey }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) return data.error || "Failed to add fallback upstream";
-      setFallbackUpstream(data.config ?? null);
-      return null;
-    } catch (err) {
-      return err instanceof Error ? err.message : String(err);
-    }
-  }, []);
-
-  const updateFallbackUpstream = useCallback(async (baseUrl: string, apiKey: string): Promise<string | null> => {
-    try {
-      const resp = await fetch("/auth/fallback-upstream", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl, apiKey }),
-      });
-      const data = await resp.json();
-      if (!resp.ok) return data.error || "Failed to update fallback upstream";
-      setFallbackUpstream(data.config ?? null);
-      return null;
-    } catch (err) {
-      return err instanceof Error ? err.message : String(err);
-    }
-  }, []);
-
-  const deleteFallbackUpstream = useCallback(async (): Promise<string | null> => {
-    try {
-      const resp = await fetch("/auth/fallback-upstream", { method: "DELETE" });
-      if (!resp.ok) {
-        const data = await resp.json().catch(() => ({}));
-        return data.error || "Failed to delete fallback upstream";
+      const response = await fetch("/auth/reload", { method: "POST" });
+      const data = await response.json();
+      setAuthFile(data.auth_file ?? authFile);
+      if (!response.ok) {
+        setError(data.error ?? `HTTP ${response.status}`);
+        return false;
       }
-      setFallbackUpstream(null);
-      return null;
-    } catch (err) {
-      return err instanceof Error ? err.message : String(err);
+      setAccount((data as AccountResponse).account);
+      setError(null);
+      setLastUpdated(new Date());
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+      return false;
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
     }
-  }, []);
+  }, [authFile]);
 
-  const deleteAccount = useCallback(
-    async (id: string) => {
-      try {
-        const resp = await fetch("/auth/accounts/" + encodeURIComponent(id), {
-          method: "DELETE",
-        });
-        if (!resp.ok) {
-          const data = await resp.json();
-          return data.error || "failedDeleteAccount";
-        }
-        await loadAccounts();
-        return null;
-      } catch (err) {
-        return "networkError" + (err instanceof Error ? err.message : "");
-      }
-    },
-    [loadAccounts]
-  );
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => void load(), 30_000);
+    return () => clearInterval(timer);
+  }, [load]);
 
-  const patchLocal = useCallback((accountId: string, patch: Partial<Account>) => {
-    setList((prev) => prev.map((a) => a.id === accountId ? { ...a, ...patch } : a));
-  }, []);
-
-  const exportAccounts = useCallback(async (selectedIds?: string[], format: AccountExportFormat = "full") => {
-    const resp = await fetch(buildAccountExportUrl(selectedIds, format));
-    const data = await resp.json() as unknown;
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = accountExportDownloadName(format);
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, []);
-
-  const importAccounts = useCallback(async (file: File): Promise<{
-    success: boolean;
-    added: number;
-    updated: number;
-    failed: number;
-    errors: string[];
-  }> => {
-    const prepared = await prepareAccountImportRequest(file);
-    if (!prepared.ok) return { success: false, added: 0, updated: 0, failed: 0, errors: [prepared.error] };
-
-    const resp = await fetch("/auth/accounts/import", {
-      method: "POST",
-      headers: { "Content-Type": prepared.contentType },
-      body: prepared.body,
-    });
-    const result = await resp.json();
-    if (resp.ok) {
-      await loadAccounts();
-    }
-    return { added: 0, updated: 0, failed: 0, errors: [], ...result };
-  }, [loadAccounts]);
-
-  const batchDelete = useCallback(async (ids: string[]): Promise<string | null> => {
-    try {
-      const resp = await fetch("/auth/accounts/batch-delete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids }),
-      });
-      if (!resp.ok) {
-        const data = await resp.json();
-        return data.error || "Batch delete failed";
-      }
-      await loadAccounts();
-      return null;
-    } catch (err) {
-      return "networkError" + (err instanceof Error ? err.message : "");
-    }
-  }, [loadAccounts]);
-
-  const batchSetStatus = useCallback(async (ids: string[], status: "active" | "disabled"): Promise<string | null> => {
-    try {
-      const resp = await fetch("/auth/accounts/batch-status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, status }),
-      });
-      if (!resp.ok) {
-        const data = await resp.json();
-        return data.error || "Batch status change failed";
-      }
-      await loadAccounts();
-      return null;
-    } catch (err) {
-      return "networkError" + (err instanceof Error ? err.message : "");
-    }
-  }, [loadAccounts]);
-
-  const toggleStatus = useCallback(async (id: string, currentStatus: string): Promise<string | null> => {
-    const newStatus = currentStatus === "disabled" ? "active" : "disabled";
-    return batchSetStatus([id], newStatus);
-  }, [batchSetStatus]);
-
-  const updateLabel = useCallback(async (id: string, label: string | null): Promise<string | null> => {
-    try {
-      const resp = await fetch(`/auth/accounts/${encodeURIComponent(id)}/label`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label }),
-      });
-      if (!resp.ok) {
-        const data = await resp.json();
-        return data.error || "Failed to update label";
-      }
-      patchLocal(id, { label: label ?? undefined });
-      return null;
-    } catch (err) {
-      return "networkError" + (err instanceof Error ? err.message : "");
-    }
-  }, [patchLocal]);
-
-  const updateCodexFingerprintMode = useCallback(async (
-    id: string,
-    mode: "off" | "session",
-  ): Promise<string | null> => {
-    try {
-      const resp = await fetch(`/auth/accounts/${encodeURIComponent(id)}/codex-fingerprint`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      if (!resp.ok) {
-        const data = await resp.json();
-        return data.error || "Failed to update Codex fingerprint mode";
-      }
-      patchLocal(id, { codexFingerprintMode: mode });
-      return null;
-    } catch (err) {
-      return "networkError" + (err instanceof Error ? err.message : "");
-    }
-  }, [patchLocal]);
-
-  return {
-    list,
-    loading,
-    refreshing,
-    lastUpdated,
-    addVisible,
-    addInfo,
-    addError,
-    addAuthUrl,
-    fallbackUpstream,
-    fallbackActive,
-    refreshFallbackUpstream,
-    addFallbackUpstream,
-    updateFallbackUpstream,
-    deleteFallbackUpstream,
-    persistenceHealth,
-    refresh: loadAccounts,
-    patchLocal,
-    startAdd,
-    cancelAdd,
-    submitRelay,
-    addByRefreshToken,
-    deleteAccount,
-    exportAccounts,
-    importAccounts,
-    batchDelete,
-    batchSetStatus,
-    toggleStatus,
-    updateLabel,
-    updateCodexFingerprintMode,
-  };
+  return { account, list: account ? [account] : [], authFile, loading, refreshing, lastUpdated, error, reload };
 }
