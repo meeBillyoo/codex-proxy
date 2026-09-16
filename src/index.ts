@@ -22,6 +22,7 @@ import { createChatRoutes } from "./routes/chat.js";
 import { createMessagesRoutes } from "./routes/messages.js";
 import { createGeminiRoutes } from "./routes/gemini.js";
 import { createModelRoutes } from "./routes/models.js";
+import { createBillingRoutes } from "./routes/billing.js";
 import { createWebRoutes } from "./routes/web.js";
 import { CookieJar } from "./proxy/cookie-jar.js";
 import { ProxyPool } from "./proxy/proxy-pool.js";
@@ -222,6 +223,7 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
   app.route("/", createOfficialAgentRoutes());
   app.route("/", proxyRoutes);
   app.route("/", createModelRoutes(apiKeyPool, clientKeyPool, accountPool));
+  app.route("/", createBillingRoutes(accountPool, clientKeyPool));
   app.route("/", webRoutes);
 
   // Start server

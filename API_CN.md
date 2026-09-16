@@ -254,6 +254,8 @@ OpenAI Chat 兼容路径会接受 `tools: [{"type":"image_generation"}]`，但�
 | GET | `/v1/models/catalog` | 完整模型目录（含 reasoning effort 及元数据） |
 | GET | `/v1/models/:id` | 单个模型详情 |
 | GET | `/v1/models/:id/info` | 扩展模型信息 |
+| GET | `/v1/dashboard/billing/subscription` | OpenAI 兼容虚拟周额度：Plus 为 140，Pro 5x 为 700，Pro 20x 为 2800 |
+| GET | `/v1/dashboard/billing/usage` | OpenAI 兼容虚拟用量（`total_usage` 单位为美分） |
 | GET | `/v1beta/models` | 列出模型（Gemini 格式） |
 | POST | `/admin/refresh-models` | 强制从上游刷新模型列表 |
 
@@ -543,4 +545,3 @@ OpenAI Chat 兼容路径会接受 `tools: [{"type":"image_generation"}]`，但�
 | Admin | `{ error: "..." }` |
 
 常见 HTTP 状态码：`401`（未认证）、`429`（限流）、`503`（无可用账号）。
-
