@@ -15,6 +15,8 @@ import { triggerImmediateRefresh } from "../models/model-fetcher.js";
 import { getConfig } from "../config.js";
 import type { ApiKeyPool } from "../auth/api-key-pool.js";
 import type { ClientKeyPool } from "../auth/client-key-pool.js";
+import type { AccountPool } from "../auth/account-pool.js";
+import { apiKeyAuth } from "../middleware/api-key-auth.js";
 import { extractProxyApiKey } from "../utils/extract-api-key.js";
 
 // --- Routes ---
@@ -73,8 +75,17 @@ function toRuntimeOpenAIModel(id: string): OpenAIModel {
   };
 }
 
-export function createModelRoutes(apiKeyPool?: ApiKeyPool, clientKeyPool?: ClientKeyPool): Hono {
+export function createModelRoutes(
+  apiKeyPool?: ApiKeyPool,
+  clientKeyPool?: ClientKeyPool,
+  accountPool?: AccountPool,
+): Hono {
   const app = new Hono();
+
+  if (accountPool) {
+    app.use("/v1/models", apiKeyAuth(accountPool, clientKeyPool));
+    app.use("/v1/models/*", apiKeyAuth(accountPool, clientKeyPool));
+  }
 
   function getClientKeyAllowedModels(c: import("hono").Context): string[] | null {
     if (!clientKeyPool) return null;

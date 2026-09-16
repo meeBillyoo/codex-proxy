@@ -186,9 +186,12 @@ describe("electron build (esbuild)", () => {
         }
 
         const baseUrl = "http://127.0.0.1:" + server.port;
+        const cfg = mod.getConfig();
+        const masterKey = cfg?.server?.proxy_api_key;
+        const headers = masterKey ? { Authorization: "Bearer " + masterKey } : {};
 
         // 1. Verify models endpoint & model catalog loading
-        const modelsRes = await fetch(baseUrl + "/v1/models");
+        const modelsRes = await fetch(baseUrl + "/v1/models", { headers });
         if (!modelsRes.ok) {
           console.error("/v1/models returned HTTP " + modelsRes.status);
           process.exit(4);
@@ -212,9 +215,6 @@ describe("electron build (esbuild)", () => {
         }
 
         // 3. Verify client-keys endpoint (triggers ClientKeyPersistence + SQLite table creation/query)
-        const cfg = mod.getConfig();
-        const masterKey = cfg?.server?.proxy_api_key;
-        const headers = masterKey ? { Authorization: "Bearer " + masterKey } : {};
         const keysRes = await fetch(baseUrl + "/admin/client-keys", { headers });
         if (!keysRes.ok) {
           console.error("/admin/client-keys returned HTTP " + keysRes.status);

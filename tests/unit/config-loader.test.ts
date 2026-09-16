@@ -321,6 +321,7 @@ describe("applyEnvOverrides", () => {
     savedEnv.CODEX_PLATFORM = process.env.CODEX_PLATFORM;
     savedEnv.CODEX_ARCH = process.env.CODEX_ARCH;
     savedEnv.CODEX_PROXY_HOST = process.env.CODEX_PROXY_HOST;
+    savedEnv.PROXY_API_KEY = process.env.PROXY_API_KEY;
     savedEnv.PORT = process.env.PORT;
     savedEnv.HTTPS_PROXY = process.env.HTTPS_PROXY;
     savedEnv.https_proxy = process.env.https_proxy;
@@ -335,6 +336,7 @@ describe("applyEnvOverrides", () => {
     delete process.env.CODEX_PLATFORM;
     delete process.env.CODEX_ARCH;
     delete process.env.CODEX_PROXY_HOST;
+    delete process.env.PROXY_API_KEY;
     delete process.env.PORT;
     delete process.env.HTTPS_PROXY;
     delete process.env.https_proxy;
@@ -373,6 +375,30 @@ describe("applyEnvOverrides", () => {
     const raw = { server: { port: 8080 }, auth: {} } as Record<string, unknown>;
     applyEnvOverrides(raw, null);
     expect((raw.server as Record<string, unknown>).port).toBe(3000);
+  });
+
+  it("applies PROXY_API_KEY over file configuration", () => {
+    process.env.PROXY_API_KEY = "  deployment-secret  ";
+    const raw = {
+      auth: {},
+      server: { proxy_api_key: "file-secret" },
+    } as Record<string, unknown>;
+
+    applyEnvOverrides(raw, { server: { proxy_api_key: "file-secret" } });
+
+    expect((raw.server as Record<string, unknown>).proxy_api_key).toBe("deployment-secret");
+  });
+
+  it("ignores an empty PROXY_API_KEY", () => {
+    process.env.PROXY_API_KEY = "   ";
+    const raw = {
+      auth: {},
+      server: { proxy_api_key: "file-secret" },
+    } as Record<string, unknown>;
+
+    applyEnvOverrides(raw, null);
+
+    expect((raw.server as Record<string, unknown>).proxy_api_key).toBe("file-secret");
   });
 
   it("applies CODEX_PROXY_HOST when local.yaml has no server.host", () => {
@@ -483,4 +509,3 @@ describe("applyEnvOverrides", () => {
     expect((raw.server as Record<string, unknown>).cors_allow_null_origin).toBe(false);
   });
 });
-

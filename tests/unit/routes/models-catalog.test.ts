@@ -8,6 +8,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createModelRoutes } from "@src/routes/models.js";
 import { resetModelStoreForTesting, loadStaticModels } from "@src/models/model-store.js";
 import type { ClientKeyPool } from "@src/auth/client-key-pool.js";
+import type { AccountPool } from "@src/auth/account-pool.js";
 
 const mockConfig = {
   model: {
@@ -98,6 +99,28 @@ describe("GET /v1/models/catalog", () => {
     expect(gpt54?.isDefault).toBe(true);
     expect(gpt53?.isDefault).toBe(false);
     expect(gpt54?.outputModalities).toEqual(["text"]);
+  });
+
+  it("requires the configured OpenAI-compatible bearer key in production wiring", async () => {
+    mockConfig.server.proxy_api_key = "deployment-secret";
+    const accountPool = {
+      validateProxyApiKey: vi.fn((key: string) => key === "deployment-secret"),
+    } as unknown as AccountPool;
+    const app = createModelRoutes(undefined, undefined, accountPool);
+
+    const missing = await app.request("/v1/models");
+    expect(missing.status).toBe(401);
+    expect(await missing.json()).toMatchObject({
+      error: { type: "invalid_request_error", code: "invalid_api_key" },
+    });
+
+    const missingCatalog = await app.request("/v1/models/catalog");
+    expect(missingCatalog.status).toBe(401);
+
+    const allowed = await app.request("/v1/models", {
+      headers: { Authorization: "Bearer deployment-secret" },
+    });
+    expect(allowed.status).toBe(200);
   });
 
   it("resolves alias when config.model.default is an alias", async () => {

@@ -175,6 +175,11 @@ export function applyEnvOverrides(
   raw: Record<string, unknown>,
   localOverrides: Record<string, unknown> | null,
 ): Record<string, unknown> {
+  const proxyApiKeyEnv = process.env.PROXY_API_KEY?.trim();
+  if (proxyApiKeyEnv) {
+    if (!raw.server) raw.server = {};
+    (raw.server as Record<string, unknown>).proxy_api_key = proxyApiKeyEnv;
+  }
   const jwtEnv = process.env.CODEX_JWT_TOKEN?.trim();
   if (jwtEnv && jwtEnv.startsWith("eyJ")) {
     (raw.auth as Record<string, unknown>).jwt_token = jwtEnv;

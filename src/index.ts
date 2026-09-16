@@ -221,7 +221,7 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
   app.route("/", imagesRoutes);
   app.route("/", createOfficialAgentRoutes());
   app.route("/", proxyRoutes);
-  app.route("/", createModelRoutes(apiKeyPool, clientKeyPool));
+  app.route("/", createModelRoutes(apiKeyPool, clientKeyPool, accountPool));
   app.route("/", webRoutes);
 
   // Start server
@@ -248,7 +248,8 @@ export async function startServer(options?: StartOptions): Promise<ServerHandle>
     const user = accountPool.getUserInfo();
     console.log(`  User: ${user?.email ?? "unknown"}`);
     console.log(`  Plan: ${user?.planType ?? "unknown"}`);
-    console.log(`  Key:  ${config.server.proxy_api_key ?? accountPool.getProxyApiKey()}`);
+    const hasProxyApiKey = Boolean(config.server.proxy_api_key ?? accountPool.getProxyApiKey());
+    console.log(`  Key:  ${hasProxyApiKey ? "configured" : "not configured"}`);
     console.log(`  Pool: ${poolSummary.active} active / ${poolSummary.total} total accounts`);
   } else {
     console.log(`  Open http://${displayHost}:${port} to login`);
