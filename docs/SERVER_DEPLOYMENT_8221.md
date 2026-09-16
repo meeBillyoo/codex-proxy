@@ -60,7 +60,38 @@ cd ..
 npx tsc
 
 mkdir -p ~/.config/systemd/user
-install -m 0644 deploy/codex-proxy.service ~/.config/systemd/user/codex-proxy.service
+```
+
+启动前创建 `~/.config/systemd/user/codex-proxy.service`：
+
+```ini
+[Unit]
+Description=Codex Proxy API on port 8221
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/collaborators/services/codex-proxy/source
+EnvironmentFile=/home/collaborators/services/codex-proxy/.env
+Environment=NODE_ENV=production
+Environment=PORT=8221
+Environment=CODEX_PROXY_HOST=0.0.0.0
+Environment=PATH=/home/collaborators/.nvm/versions/node/v24.19.0/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/collaborators/.nvm/versions/node/v24.19.0/bin/node dist/index.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=30
+StandardOutput=append:/home/collaborators/services/codex-proxy/service.log
+StandardError=append:/home/collaborators/services/codex-proxy/service.log
+
+[Install]
+WantedBy=default.target
+```
+
+保存服务文件后执行：
+
+```bash
 systemctl --user daemon-reload
 systemctl --user enable --now codex-proxy.service
 ```
