@@ -1,7 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const mockGetConfig = vi.fn();
-const mockProxyAgent = vi.fn((url: string) => ({ proxyUrl: url }));
+const mockProxyAgent = vi.fn(function (url: string) {
+  return { proxyUrl: url };
+});
 
 vi.mock("@src/config.js", () => ({
   getConfig: () => mockGetConfig(),

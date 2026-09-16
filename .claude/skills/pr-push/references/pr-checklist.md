@@ -28,7 +28,6 @@ Codex-proxy ships three artifacts: backend (Docker), Electron desktop, web front
 
 - [ ] If `src/` changed → backend logic still passes `npm test`
 - [ ] If `web/` changed → `npm run build` produces a clean Vite bundle
-- [ ] If `Dockerfile` / `docker-compose*` changed → image still builds
 - [ ] If `packages/electron/**` or `electron-builder.yml` changed → Electron config validates
 - [ ] If `native/**` changed → native addon still builds
 

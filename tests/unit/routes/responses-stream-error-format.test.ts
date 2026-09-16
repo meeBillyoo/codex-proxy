@@ -40,16 +40,18 @@ vi.mock("@src/proxy/codex-api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@src/proxy/codex-api.js")>();
   return {
     ...actual,
-    CodexApi: vi.fn().mockImplementation(() => ({
-      tag: "codex",
-      createResponse: vi.fn((): Promise<Response> => {
-        if (mockCreateResponse) return mockCreateResponse();
-        return Promise.resolve(new Response("data: {}\n\n"));
-      }),
-      parseStream: vi.fn(async function* () {
-        yield { event: "response.completed", data: { response: { id: "resp_ok" } } };
-      }),
-    })),
+    CodexApi: vi.fn().mockImplementation(function () {
+      return {
+        tag: "codex",
+        createResponse: vi.fn((): Promise<Response> => {
+          if (mockCreateResponse) return mockCreateResponse();
+          return Promise.resolve(new Response("data: {}\n\n"));
+        }),
+        parseStream: vi.fn(async function* () {
+          yield { event: "response.completed", data: { response: { id: "resp_ok" } } };
+        }),
+      };
+    }),
   };
 });
 

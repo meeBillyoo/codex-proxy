@@ -113,17 +113,19 @@ vi.mock("@src/proxy/codex-api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@src/proxy/codex-api.js")>();
   return {
     ...actual,
-    CodexApi: vi.fn().mockImplementation(() => ({
-      createResponse: vi.fn(async (req: CodexResponsesRequest) => {
-        const snapshot = structuredClone(req);
-        capturedCodexRequest = snapshot;
-        capturedCodexRequests.push(snapshot);
-        return {
-          status: 200,
-          headers: new Headers({ "x-codex-turn-state": "turn-123" }),
-        };
-      }),
-    })),
+    CodexApi: vi.fn().mockImplementation(function () {
+      return {
+        createResponse: vi.fn(async (req: CodexResponsesRequest) => {
+          const snapshot = structuredClone(req);
+          capturedCodexRequest = snapshot;
+          capturedCodexRequests.push(snapshot);
+          return {
+            status: 200,
+            headers: new Headers({ "x-codex-turn-state": "turn-123" }),
+          };
+        }),
+      };
+    }),
   };
 });
 

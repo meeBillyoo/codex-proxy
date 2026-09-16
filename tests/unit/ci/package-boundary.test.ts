@@ -66,10 +66,8 @@ function collectNonNpmRegistrySources(lockfilePath: string): string[] {
 describe("root package boundary", () => {
   const pkg = readJsonRecord(resolve(ROOT, "package.json"));
   const lock = readJsonRecord(resolve(ROOT, "package-lock.json"));
-  const electronPkg = readJsonRecord(resolve(ROOT, "packages/electron/package.json"));
   const lockPackages = requireRecord(lock, "packages");
   const lockRoot = requireRecord(lockPackages, "");
-  const lockElectron = requireRecord(lockPackages, "packages/electron");
   const scripts = requireRecord(pkg, "scripts");
 
   it("keeps the root package identified as codex-proxy", () => {
@@ -83,9 +81,8 @@ describe("root package boundary", () => {
   it("keeps package.json and package-lock.json root metadata in sync", () => {
     expect(lock.version).toBe(pkg.version);
     expect(lockRoot.version).toBe(pkg.version);
-    expect(lockElectron.version).toBe(electronPkg.version);
-    expect(requireStringArray(pkg, "workspaces")).toEqual(["packages/*"]);
-    expect(requireStringArray(lockRoot, "workspaces")).toEqual(["packages/*"]);
+    expect(pkg.workspaces).toBeUndefined();
+    expect(lockRoot.workspaces).toBeUndefined();
     expect(pkg.type).toBe("module");
   });
 
@@ -119,85 +116,11 @@ describe("root package boundary", () => {
     const lockRootDependencies = requireRecord(lockRoot, "dependencies");
     const lockRootDevDependencies = requireRecord(lockRoot, "devDependencies");
     const asarLockPackage = requireRecord(lockPackages, "node_modules/@electron/asar");
-    const dockerfile = readFileSync(resolve(ROOT, "Dockerfile"), "utf-8");
-
-    expect(dockerfile).toContain("npm prune --omit=dev");
-    expect(dockerfile).toContain("npm install --no-save tsx");
     expect(dependencies["@electron/asar"]).toBeDefined();
     expect(lockRootDependencies["@electron/asar"]).toBeDefined();
     expect(devDependencies["@electron/asar"]).toBeUndefined();
     expect(lockRootDevDependencies["@electron/asar"]).toBeUndefined();
     expect(asarLockPackage.dev).toBeUndefined();
-  });
-
-  it("keeps the stable release bump workflow tag-only (no version commit onto master)", () => {
-    const workflow = readFileSync(resolve(ROOT, ".github/workflows/bump-electron.yml"), "utf-8");
-    // Tag-only contract: bump must NOT commit a version bump or push master.
-    // A version-bump commit on master can't FF back to an always-ahead dev,
-    // which kept breaking promote and regressed package.json on the next
-    // dev→master reconcile. Version ships from the tag (release.yml
-    // extraMetadata.version), mirroring bump-electron-beta.yml.
-    expect(workflow).not.toContain('git commit -m "chore: bump version');
-    expect(workflow).not.toContain("git push origin master");
-    expect(workflow).not.toContain("Sync bump commit back to dev");
-    // It must still create and push the release tag.
-    expect(workflow).toContain('git tag -a "$NEW_TAG"');
-    expect(workflow).toContain('git push origin "$NEW_TAG"');
-    expect(workflow.match(/sync-changelog-series\.mjs --check --series "\$SERIES"/g)).toHaveLength(2);
-  });
-
-  it("syncs unreleased changelog entries on dev before a stable bump can run", () => {
-    const workflow = readFileSync(resolve(ROOT, ".github/workflows/sync-changelog-series.yml"), "utf-8");
-
-    expect(workflow).toContain("branches: [dev]");
-    expect(workflow).toContain("ref: dev");
-    expect(workflow).toContain("node .github/scripts/sync-changelog-series.mjs");
-    expect(workflow).toContain("git push origin HEAD:dev");
-  });
-
-  it("keeps release-note workflow fixes from triggering app releases", () => {
-    const stableWorkflow = readFileSync(resolve(ROOT, ".github/workflows/bump-electron.yml"), "utf-8");
-    const betaWorkflow = readFileSync(resolve(ROOT, ".github/workflows/bump-electron-beta.yml"), "utf-8");
-
-    expect(stableWorkflow).toContain("SKIP_RELEASE_PATTERN=");
-    expect(stableWorkflow).toContain("fix: generate stable notes from dev promotion history");
-    expect(stableWorkflow).toContain("grep -cvE \"$SKIP_RELEASE_PATTERN\"");
-
-    expect(betaWorkflow).toContain("SKIP_RELEASE_PATTERN=");
-    expect(betaWorkflow).toContain("fix: generate stable notes from dev promotion history");
-    expect(betaWorkflow).toContain("grep -cvE \"$SKIP_RELEASE_PATTERN\"");
-  });
-
-  it("requires runtime file changes before bumping release channels", () => {
-    const stableWorkflow = readFileSync(resolve(ROOT, ".github/workflows/bump-electron.yml"), "utf-8");
-    const betaWorkflow = readFileSync(resolve(ROOT, ".github/workflows/bump-electron-beta.yml"), "utf-8");
-
-    for (const workflow of [stableWorkflow, betaWorkflow]) {
-      expect(workflow).toContain("RUNTIME_CHANGED_FILES=");
-      expect(workflow).toContain("git diff --name-only");
-      expect(workflow).toContain(":(exclude).github/**");
-      expect(workflow).toContain(":(exclude)tests/**");
-      expect(workflow).toContain(":(exclude)README.md");
-      expect(workflow).toContain("No runtime files changed");
-    }
-  });
-
-  it("enforces package/update boundary guards in GitHub Actions", () => {
-    const workflowPath = resolve(ROOT, ".github/workflows/ci-quality.yml");
-    expect(existsSync(workflowPath)).toBe(true);
-    const workflow = readFileSync(workflowPath, "utf-8");
-    expect(workflow).toContain("pull_request:");
-    expect(workflow).toContain("push:");
-    expect(workflow).toContain("branches: [dev, master]");
-    expect(workflow).toContain("npm ci");
-    expect(workflow).toContain("tests/unit/ci/package-boundary.test.ts");
-    expect(workflow).toContain("tests/unit/update-scripts-path.test.ts");
-    expect(workflow).toContain("tests/unit/update-checker.test.ts");
-    expect(workflow).toContain("npm run typecheck:scripts");
-
-    const promote = readFileSync(resolve(ROOT, ".github/workflows/promote-dev-to-master.yml"), "utf-8");
-    expect(promote).toContain('if [ "$STATUS" = "green" ]; then');
-    expect(promote).not.toContain("no-checks");
   });
 
   it("keeps public update scripts under strict TypeScript coverage", () => {

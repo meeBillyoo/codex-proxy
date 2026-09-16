@@ -12,7 +12,7 @@ const WEBVIEW2_INSTALL_HELP_URL = "https://developer.microsoft.com/microsoft-edg
 const WEBVIEW2_BOOTSTRAPPER_URL = "https://go.microsoft.com/fwlink/?linkid=2124703";
 const WEBVIEW2_BOOTSTRAPPER_NAME = "MicrosoftEdgeWebView2Setup.exe";
 const PROMPT_TIMEOUT_MS = 15_000;
-const ELECTRON_USER_DATA_SCOPE = ["@codex-proxy", "electron"];
+const USER_DATA_SCOPE = ["codex-proxy"];
 
 function usage() {
   console.log(`Usage: node app/server.mjs [options]
@@ -79,7 +79,7 @@ function defaultUserDataDir() {
   } else {
     baseDir = process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), ".config");
   }
-  return resolve(baseDir, ...ELECTRON_USER_DATA_SCOPE, "data");
+  return resolve(baseDir, ...USER_DATA_SCOPE, "data");
 }
 
 function openExternal(url) {
@@ -305,8 +305,8 @@ setPaths({
 });
 console.log(`[Portable] Data directory: ${dataDir}${options.portable ? " (portable)" : " (user profile)"}`);
 const nodeMajor = Number(process.versions.node.split(".")[0]);
-if (!Number.isInteger(nodeMajor) || nodeMajor < 20) {
-  console.error(`[Portable] Node.js 20 or newer is required; found ${process.versions.node}`);
+if (!Number.isInteger(nodeMajor) || nodeMajor < 24) {
+  console.error(`[Portable] Node.js 24 or newer is required; found ${process.versions.node}`);
   process.exit(2);
 }
 let handle;

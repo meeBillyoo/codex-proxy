@@ -5,11 +5,9 @@
   <p>將 Codex Desktop 的能力以 OpenAI / Anthropic / Gemini 標準協議對外開放，無縫接入任意 AI 客戶端。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Runtime-Node.js_18+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
+    <img src="https://img.shields.io/badge/Runtime-Node.js_24+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
     <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
     <img src="https://img.shields.io/badge/Framework-Hono-E36002?style=flat-square" alt="Hono">
-    <img src="https://img.shields.io/badge/Docker-Supported-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-    <img src="https://img.shields.io/badge/Desktop-Win%20%7C%20Mac%20%7C%20Linux-8A2BE2?style=flat-square&logo=electron&logoColor=white" alt="Desktop">
     <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
   </p>
 
@@ -65,28 +63,11 @@
 > **前置條件**：您需要一個 ChatGPT 帳號（免費帳號即可）。如果還沒有，請先前往 [chat.openai.com](https://chat.openai.com) 註冊。
 
 <details>
-<summary><h3>方式一：桌面應用程式（推薦新手）</h3></summary>
-
-下載 → 安裝 → 打開即可使用。
-
-**下載安裝包** — 開啟 [Releases 頁面](https://github.com/icebear0828/codex-proxy/releases)，根據系統下載：
-
-| 系統 | 檔案 |
-|------|------|
-| Windows | `Codex Proxy Setup x.x.x.exe` |
-| macOS | `Codex Proxy-x.x.x.dmg` |
-| Linux | `Codex Proxy-x.x.x.AppImage` |
-
-安裝後打開應用程式，點擊登入按鈕使用 ChatGPT 帳號登入。瀏覽器訪問 `http://localhost:8080` 即可查看控制面板。
-
-</details>
-
-<details>
-<summary><h3>方式二：No-Node Lite（瀏覽器／伺服器版，適合進階使用者）</h3></summary>
+<summary><h3>方式一：No-Node Lite（瀏覽器／伺服器版）</h3></summary>
 
 如果您已安裝 Node.js，或需要在伺服器、WSL 等沒有桌面環境的機器上執行 Codex Proxy，
-可以使用 No-Node Lite。它使用與 Electron 版相同的後端與控制面板，但不內置 Node.js，
-因此套件更小，也方便您自行管理執行環境；上方的 Electron 安裝包不受影響。
+可以使用 No-Node Lite。它包含後端與控制面板，但不內置 Node.js，
+因此套件更小，也方便您自行管理執行環境。
 
 請從 Releases 下載 `codex-proxy-<version>-no-node-lite-all-platforms.zip`，解壓後在套件根目錄執行：
 
@@ -96,7 +77,7 @@
 ./codex-proxy.sh
 ```
 
-此版本需要 Node.js 20 或更新版本。Windows 會優先使用 WebView2；如果無法使用，便啟動服務並
+此版本需要 Node.js 24 或更新版本。Windows 會優先使用 WebView2；如果無法使用，便啟動服務並
 以系統瀏覽器開啟實際的服務網址。`--mode=server` 只啟動服務，`--mode=browser` 強制使用瀏覽器，
 `--mode=webview2` 強制使用 WebView2。缺少 WebView2 執行階段而顯式指定 `--mode=webview2` 時，
 會先詢問，確認後自動下載並執行微軟官方線上安裝器（約 2MB，已驗證微軟簽章），逾時或拒絕則結束。
@@ -104,24 +85,6 @@
 
 Linux x64 Lite 同時包含 glibc 與 musl TLS native addon，可用於常見 Linux 發行版及 Alpine Linux；
 目前不包含 Linux ARM 等其他 native 架構。
-
-</details>
-
-<details>
-<summary><h3>方式三：Docker 部署</h3></summary>
-
-```bash
-mkdir codex-proxy && cd codex-proxy
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/docker-compose.yml
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/.env.example
-cp .env.example .env
-docker compose up -d
-# 打開 http://localhost:8080 登入
-```
-
-> 帳號數據保存在 `data/` 文件夾，重啟不丟失。其他容器連接本服務請用宿主機 IP（如 `192.168.x.x:8080`），不要用 `localhost`。
-
-取消 `docker-compose.yml` 中 Watchtower 的註釋即可自動更新。若要在 Docker 中啟用 Ollama 相容橋接，請參考下方 [Ollama Bridge 配置](#ollama-bridge-配置)。
 
 </details>
 
@@ -144,7 +107,6 @@ npm run dev                        # 開發模式（熱重載）
 > # 2. 編譯 TLS addon
 > cd native && npm install && npm run build && cd ..
 > ```
-> Docker / 桌面應用程式已內置編譯好的 addon，無需手動編譯。
 
 打開 `http://localhost:8080` 登入。
 
@@ -531,7 +493,7 @@ for await (const chunk of stream) {
 
 ### 局域網訪問
 
-源代碼預設配置僅監聽 `127.0.0.1`；Electron 亦會傳入 `127.0.0.1`，除非 `data/local.yaml` 明確覆蓋。如需局域網內其他設備訪問，可在 `data/local.yaml` 中配置：
+源代碼預設配置僅監聽 `127.0.0.1`，除非 `data/local.yaml` 明確覆蓋。如需局域網內其他設備訪問，可在 `data/local.yaml` 中配置：
 
 ```yaml
 server:
@@ -565,16 +527,15 @@ server:
 
 ## 📋 系統要求
 
-- **Node.js** 18+（推薦 20+）
-- **Rust** — 源代碼運行需 Rust 工具鏈（編譯 TLS native addon）；Docker / 桌面應用程式已內置
+- **Node.js** 24+
+- **Rust** — 源代碼運行需 Rust 工具鏈（編譯 TLS native addon）
 - **ChatGPT 帳號** — 免費帳號即可
-- **Docker**（可選）
 
 ## ⚠️ 注意事項
 
 - Codex API 為**串流輸出專用**，`stream: false` 時代理內部串流收集後返回完整 JSON
 - 本項目依賴 Codex Desktop 的公開介面，上游版本更新時會自動檢測並更新指紋
-- Windows 下 native TLS addon 需 Rust 工具鏈編譯；Docker 部署已預編譯，無需額外配置
+- Windows 下 native TLS addon 需 Rust 工具鏈編譯
 
 ## 📝 最近更新
 

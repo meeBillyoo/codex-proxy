@@ -5,11 +5,9 @@
   <p>Expose Codex Desktop's capabilities as standard OpenAI / Anthropic / Gemini APIs, seamlessly connecting any AI client.</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Runtime-Node.js_18+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
+    <img src="https://img.shields.io/badge/Runtime-Node.js_24+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
     <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
     <img src="https://img.shields.io/badge/Framework-Hono-E36002?style=flat-square" alt="Hono">
-    <img src="https://img.shields.io/badge/Docker-Supported-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-    <img src="https://img.shields.io/badge/Desktop-Win%20%7C%20Mac%20%7C%20Linux-8A2BE2?style=flat-square&logo=electron&logoColor=white" alt="Desktop">
     <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
   </p>
 
@@ -55,21 +53,9 @@ Just a ChatGPT account (or a third-party API key provider) and this proxy — yo
 
 ## 🚀 Quick Start
 
-### Desktop App (Easiest)
+### No-Node Lite (Browser/Server)
 
-Download the installer from [GitHub Releases](https://github.com/icebear0828/codex-proxy/releases):
-
-| Platform | Installer |
-|----------|-----------|
-| Windows | `Codex Proxy Setup x.x.x.exe` |
-| macOS | `Codex Proxy-x.x.x.dmg` |
-| Linux | `Codex Proxy-x.x.x.AppImage` |
-
-Open the app, log in with your ChatGPT account. Dashboard at `http://localhost:8080`.
-
-### No-Node Lite (Browser/Server, for advanced users)
-
-If you already have Node.js installed, or need to run Codex Proxy on a server, WSL, or another machine without a desktop, use the optional No-Node Lite distribution. It uses the same backend and dashboard as the Electron app but does not bundle Node.js, so the archive is smaller and the runtime remains under your control. The Electron installers above are unchanged. Download `codex-proxy-<version>-no-node-lite-all-platforms.zip`, extract it, and run the platform entry point from the package root:
+If you already have Node.js installed, or need to run Codex Proxy on a server or WSL, use the No-Node Lite distribution. It contains the backend and dashboard but does not bundle Node.js, so the archive is smaller and the runtime remains under your control. Download `codex-proxy-<version>-no-node-lite-all-platforms.zip`, extract it, and run the platform entry point from the package root:
 
 ```bash
 # Windows: double-click codex-proxy.exe; codex-proxy.cmd is always included as a script fallback
@@ -77,43 +63,11 @@ If you already have Node.js installed, or need to run Codex Proxy on a server, W
 ./codex-proxy.sh
 ```
 
-Node.js 20 or newer is required. By default the Windows launcher checks for the packaged WebView2 host and an installed WebView2 Runtime. If WebView2 is unavailable, it starts the local server and opens the actual bound server URL in the system browser. Use `--mode=server` to start only the server, `--mode=browser` to force the browser, or `--mode=webview2` to require WebView2. When the WebView2 Runtime is missing, `--mode=webview2` asks first and then downloads and runs Microsoft's official online installer (~2 MB, Authenticode-verified); a timeout or refusal exits. The URL is derived from the bound port rather than hard-coded. Windows portable releases provide x86/x64 WebView2 hosts. If Node.js cannot be started, the launchers show installation guidance instead of downloading or bundling Node.js.
+Node.js 24 or newer is required. By default the Windows launcher checks for the packaged WebView2 host and an installed WebView2 Runtime. If WebView2 is unavailable, it starts the local server and opens the actual bound server URL in the system browser. Use `--mode=server` to start only the server, `--mode=browser` to force the browser, or `--mode=webview2` to require WebView2. When the WebView2 Runtime is missing, `--mode=webview2` asks first and then downloads and runs Microsoft's official online installer (~2 MB, Authenticode-verified); a timeout or refusal exits. The URL is derived from the bound port rather than hard-coded. Windows portable releases provide x86/x64 WebView2 hosts. If Node.js cannot be started, the launchers show installation guidance instead of downloading or bundling Node.js.
 
-Like the Electron app, Lite uses the normal per-user data directory by default. Pass `--portable` (or `-p`) to keep data under the extracted package directory instead. `--host`, `--port`, `--webview2-host`, and `--node-path` also have the short forms `-H`, `-P`, `-w`, and `-n`. The Lite update action opens the latest Releases page rather than replacing the running package automatically. On macOS/Linux and in Git Bash, the shell launcher defaults to browser mode; use `--mode=auto` only when you want environment-based selection.
+Lite uses the normal per-user data directory by default. Pass `--portable` (or `-p`) to keep data under the extracted package directory instead. `--host`, `--port`, `--webview2-host`, and `--node-path` also have the short forms `-H`, `-P`, `-w`, and `-n`. The Lite update action opens the latest Releases page rather than replacing the running package automatically. On macOS/Linux and in Git Bash, the shell launcher defaults to browser mode; use `--mode=auto` only when you want environment-based selection.
 
 Linux x64 Lite includes both glibc and musl TLS native addons, so it can be used on common Linux distributions and Alpine Linux. Other native architectures, including Linux ARM, are not currently included.
-
-### Docker
-
-The simplest way — one command:
-
-```bash
-docker run -d --name codex-proxy --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
-  -v codex-proxy-data:/app/data \
-  -v codex-proxy-config:/app/config \
-  ghcr.io/icebear0828/codex-proxy:latest-lite
-# Open http://localhost:8080 to log in
-```
-
-> This image is based on Alpine Linux + Node.js and contains only the application itself, the web UI and the native components needed at runtime — build toolchains, dependency caches and other build-time-only content are removed. **It is feature-complete**: the web dashboard, account management, the Ollama bridge and everything else work the same. Currently linux/amd64. It pulls ~57 MB compressed (the alternative Debian-based image is ~722 MB) and idles at ~40 MB RAM. On first start it seeds default config into the `codex-proxy-config` volume; your accounts live in the `codex-proxy-data` volume and survive image updates. To allow LAN access, use `-p 8080:8080`.
-
-Already using `docker-compose.yml` (which defaults to the Debian-based `:latest` image, with the toolchain handy for in-container debugging or building from source)? No migration needed — the two images share the same layout and `./data` / `./config` volumes; just change `image` to `ghcr.io/icebear0828/codex-proxy:latest-lite`.
-
-For environment variables, auto-updates and more options, use the compose setup:
-
-```bash
-mkdir codex-proxy && cd codex-proxy
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/docker-compose.yml
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/.env.example
-cp .env.example .env
-docker compose up -d
-# Open http://localhost:8080 to log in
-```
-
-> Data persists in `data/`. Cross-container access: use host LAN IP (e.g. `192.168.x.x:8080`), not `localhost`. Uncomment Watchtower in `docker-compose.yml` for auto-updates. To enable the Ollama-compatible bridge in Docker, see [Ollama Bridge configuration](#ollama-bridge-configuration).
-
-> **Memory settings**: `docker-compose.yml` defaults to `MEM_LIMIT=768m` and `NODE_OPTIONS=--max-old-space-size=512`. Set both variables in `.env` to override the defaults for your machine. Without these settings, Node/V8 sizes its default heap off the *host's* total memory rather than what this container should actually use — on a memory-constrained or shared host that can let RSS climb unchecked (GC stays too lenient) and, in the worst case, take the whole host down. Tune both to your machine: leave `mem_limit` enough headroom for everything else running there, and keep `--max-old-space-size` comfortably below `mem_limit` (the process's RSS is more than just the V8 heap).
 
 ### From Source
 
@@ -131,7 +85,6 @@ npm run dev                        # Dev mode (hot reload)
 > curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 > cd native && npm install && npm run build && cd ..
 > ```
-> Docker / desktop app ship pre-built addons — no manual compilation needed.
 
 ### Verify
 
@@ -714,17 +667,11 @@ Supported Ollama endpoints:
 | `http://localhost:11434/api/chat` | POST | Chat completions with streaming NDJSON |
 | `http://localhost:11434/v1/*` | Any | OpenAI `/v1` passthrough |
 
-For Docker deployments that need host access to `11434`:
-
-1. Set `ollama.enabled: true` and `ollama.host: 0.0.0.0` in the Dashboard or `data/local.yaml`.
-2. Uncomment the `127.0.0.1:${OLLAMA_BRIDGE_PORT:-11434}:11434` port mapping in `docker-compose.yml`.
-3. Keep the host binding on `127.0.0.1` unless you intentionally want to expose an unauthenticated Ollama API.
-
 Browser CORS access is limited to loopback origins such as `localhost`, `127.x.x.x`, and `::1`; non-local web origins are not allowed to read bridge responses. The bridge injects the configured Codex Proxy API key for `/v1/*` passthrough requests, so exposing it beyond localhost effectively grants unauthenticated access to the main proxy API.
 
 ### Listen Address
 
-The source/Docker default config listens on `::` (IPv6 unspecified, usually still reachable from localhost). Electron passes `127.0.0.1` at startup unless `data/local.yaml` explicitly overrides `server.host`. To force localhost-only binding:
+The default config listens on `::` (IPv6 unspecified, usually still reachable from localhost). To force localhost-only binding:
 
 ```yaml
 server:
@@ -881,16 +828,15 @@ curl -X POST http://localhost:8080/auth/accounts/import \
 
 ## 📋 Requirements
 
-- **Node.js** 18+ (20+ recommended)
-- **Rust** — required for source builds (compiles TLS native addon); Docker / desktop app ship pre-built
+- **Node.js** 24+
+- **Rust** — required for source builds (compiles TLS native addon)
 - **ChatGPT account** — free account is sufficient
-- **Docker** (optional)
 
 ## ⚠️ Notes
 
 - Codex API is **stream-only**. `stream: false` causes the proxy to stream internally and return assembled JSON.
 - This project relies on Codex Desktop's public API. Upstream updates are auto-detected and fingerprints auto-synced.
-- Windows source builds need Rust toolchain for the TLS native addon. Docker deployment has it pre-built.
+- Windows source builds need the Rust toolchain for the TLS native addon.
 
 ## ☕ Donate & Community
 

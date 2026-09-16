@@ -1,8 +1,8 @@
 /**
- * Proxy self-update — detects available updates in three deployment modes:
+ * Proxy self-update — detects available updates across supported deployment modes:
  * - CLI (git): git fetch + commit log
- * - Docker (no .git): GHCR registry tag list (checks actual published images)
  * - Electron (embedded) / Lite: GitHub Releases API
+ * - Manual (no .git): GitHub Releases API
  */
 
 import { execFile, execFileSync, spawn } from "child_process";
@@ -78,7 +78,6 @@ function hardRestart(cwd: string): void {
 const execFileAsync = promisify(execFile);
 
 const GITHUB_REPO = "icebear0828/codex-proxy";
-const GHCR_IMAGE = "icebear0828/codex-proxy";
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const INITIAL_DELAY_MS = 10_000; // 10 seconds after startup
 
@@ -100,7 +99,7 @@ export interface GitHubReleaseInfo {
   publishedAt: string;
 }
 
-export type DeployMode = "git" | "docker" | "electron" | "lite";
+export type DeployMode = "git" | "manual" | "electron" | "lite";
 
 export interface ProxySelfUpdateResult {
   commitsBehind: number;
@@ -125,11 +124,9 @@ export function getProxyInfo(): ProxyInfo {
   let version: string | null = null;
   let commit: string | null = null;
 
-  // 1. Build-time injected version (e.g. Docker --build-arg PROXY_VERSION=x.y.z)
-  //    This is the most reliable source in containerised environments that lack .git.
+  // 1. Build-time injected version.
   const envVersion = process.env.PROXY_VERSION?.trim();
-  // "unknown" is the Dockerfile ARG default when --build-arg PROXY_VERSION is omitted;
-  // treat it as absent so we fall back to git-tag / package.json.
+  // Treat "unknown" as absent so we fall back to git-tag / package.json.
   if (envVersion && envVersion !== "unknown") {
     version = envVersion;
   } else {
@@ -210,7 +207,7 @@ export function getDeployMode(): DeployMode {
   if (isEmbedded()) return "electron";
   if (isLite()) return "lite";
   if (canSelfUpdate()) return "git";
-  return "docker";
+  return "manual";
 }
 
 /** Whether a proxy self-update is currently in progress. */
@@ -260,75 +257,6 @@ async function getRemoteChangelog(cwd: string): Promise<string | null> {
     const section = nextHeading !== -1 ? rest.substring(0, nextHeading) : rest;
     const trimmed = section.trim();
     return trimmed || null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Check GHCR (GitHub Container Registry) for the latest published Docker image version.
- *
- * Uses the OCI Distribution API with anonymous token:
- * 1. GET /token?scope=repository:…:pull → anonymous bearer token
- * 2. GET /v2/…/tags/list → all published tags
- * 3. Filter v* tags, return highest semver.
- *
- * Returns null on any failure (network, auth, no version tags).
- */
-export async function checkDockerRegistryVersion(): Promise<string | null> {
-  try {
-    // Step 1: obtain anonymous pull token
-    const tokenResp = await fetch(
-      `https://ghcr.io/token?service=ghcr.io&scope=repository:${GHCR_IMAGE}:pull`,
-      { signal: AbortSignal.timeout(10000) },
-    );
-    if (!tokenResp.ok) return null;
-    const { token } = await tokenResp.json() as { token: string };
-
-    // Step 2: list all tags (follow OCI pagination via Link header)
-    const allTags: string[] = [];
-    let nextUrl: string | null = `https://ghcr.io/v2/${GHCR_IMAGE}/tags/list`;
-    const MAX_PAGES = 10; // safety limit
-
-    for (let page = 0; page < MAX_PAGES && nextUrl; page++) {
-      const tagsResp = await fetch(nextUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!tagsResp.ok) return null;
-      const { tags } = await tagsResp.json() as { tags: string[] };
-      allTags.push(...tags);
-
-      // OCI pagination: Link: </v2/.../tags/list?last=...>; rel="next"
-      const link = tagsResp.headers.get("link");
-      nextUrl = null;
-      if (link) {
-        const m = /<([^>]+)>;\s*rel="next"/.exec(link);
-        if (m) nextUrl = m[1].startsWith("http") ? m[1] : `https://ghcr.io${m[1]}`;
-      }
-    }
-
-    let allowPrerelease = false;
-    try {
-      allowPrerelease = getConfig().update?.allow_prerelease ?? false;
-    } catch {
-      // config not loaded
-    }
-
-    // Step 3: filter version tags and find highest
-    const VERSION_RE = allowPrerelease
-      ? /^v?(\d+\.\d+\.\d+(?:-beta\.[0-9a-zA-Z]+)?)$/
-      : /^v?(\d+\.\d+\.\d+)$/;
-    let latest: string | null = null;
-    for (const tag of allTags) {
-      const m = VERSION_RE.exec(tag);
-      if (!m) continue;
-      const ver = m[1];
-      if (!latest || ver.localeCompare(latest, undefined, { numeric: true }) > 0) {
-        latest = ver;
-      }
-    }
-    return latest;
   } catch {
     return null;
   }
@@ -445,39 +373,7 @@ export async function checkProxySelfUpdate(): Promise<ProxySelfUpdateResult> {
 
   const currentVersion = getProxyInfo().version ?? "0.0.0";
 
-  if (mode === "docker") {
-    // Docker — check actual GHCR registry for published image tags
-    const registryVersion = await checkDockerRegistryVersion();
-    let updateAvailable = registryVersion !== null
-      && registryVersion !== currentVersion
-      && registryVersion.localeCompare(currentVersion, undefined, { numeric: true }) > 0;
-
-    // Fetch GitHub Release notes for context (best effort)
-    let release: GitHubReleaseInfo | null = null;
-    if (updateAvailable) {
-      release = await checkGitHubRelease();
-      // If the release version doesn't match registry, synthesize minimal info
-      if (!release || release.version !== registryVersion) {
-        release = {
-          version: registryVersion!,
-          tag: `v${registryVersion}`,
-          body: "",
-          url: `https://github.com/${GITHUB_REPO}/releases/tag/v${registryVersion}`,
-          publishedAt: "",
-        };
-      }
-    }
-
-    const result: ProxySelfUpdateResult = {
-      commitsBehind: 0, currentCommit: null, latestCommit: null,
-      commits: [], changelog: null, release: updateAvailable ? release : null,
-      updateAvailable, mode,
-    };
-    _cachedResult = result;
-    return result;
-  }
-
-  // Electron and Lite — GitHub Releases API
+  // Electron, Lite, and manual installs — GitHub Releases API
   const release = await checkGitHubRelease();
   let updateAvailable = release !== null
     && release.version !== currentVersion

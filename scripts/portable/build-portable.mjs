@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(SCRIPT_DIR, "../..");
 const DEFAULT_OUT = resolve(ROOT, "portable-release");
-const BUNDLE = resolve(ROOT, "packages/electron/dist-electron/server.mjs");
+const BUNDLE = resolve(ROOT, "portable-release/server-bundle.mjs");
 
 function parseArgs(argv) {
   const options = {
@@ -294,7 +294,7 @@ function main() {
   const options = parseArgs(process.argv.slice(2));
   const rootPackage = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8"));
   const version = options.version ?? rootPackage.version;
-  requirePath(BUNDLE, "server bundle; run the Electron esbuild step first");
+  requirePath(BUNDLE, "server bundle; run npm run build:lite first");
   requirePath(resolve(ROOT, "public", "index.html"), "built web assets; run npm run build first");
 
   const stage = resolve(options.out, ".staging", "codex-proxy");
@@ -312,7 +312,7 @@ function main() {
     name: "codex-proxy-lite",
     version,
     bundledNode: false,
-    minimumNodeMajor: 20,
+    minimumNodeMajor: 24,
     modes: ["server", "browser", "auto", "webview2"],
     webview2: {
       hostArchitectures: webview2Hosts,

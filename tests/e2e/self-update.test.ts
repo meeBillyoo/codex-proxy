@@ -207,7 +207,7 @@ describe("E2E: self-update routes", () => {
       expect(proxy.commits).toEqual([]);
     });
 
-    it("returns docker mode when .git is missing", async () => {
+    it("returns manual mode when .git is missing", async () => {
       _existsSync.mockReturnValue(false);
 
       const app = await buildApp();
@@ -215,7 +215,7 @@ describe("E2E: self-update routes", () => {
       const body = await res.json() as Record<string, unknown>;
       const proxy = body.proxy as Record<string, unknown>;
 
-      expect(proxy.mode).toBe("docker");
+      expect(proxy.mode).toBe("manual");
       expect(proxy.can_self_update).toBe(false);
     });
 
@@ -302,9 +302,8 @@ describe("E2E: self-update routes", () => {
       expect(proxy.current_commit).toBe("aaa");
     });
 
-    // TODO: docker mode detection logic changed, test needs update
-    it.skip("falls back to GitHub Releases in docker mode", async () => {
-      _existsSync.mockReturnValue(false); // no .git → docker mode
+    it("falls back to GitHub Releases in manual mode", async () => {
+      _existsSync.mockReturnValue(false); // no .git → manual mode
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -322,7 +321,7 @@ describe("E2E: self-update routes", () => {
       const body = await res.json() as Record<string, unknown>;
       const proxy = body.proxy as Record<string, unknown>;
 
-      expect(proxy.mode).toBe("docker");
+      expect(proxy.mode).toBe("manual");
       expect(proxy.update_available).toBe(true);
       const release = proxy.release as Record<string, unknown>;
       expect(release.version).toBe("2.0.0");
@@ -501,8 +500,8 @@ describe("E2E: self-update routes", () => {
       expect(exitSpy).not.toHaveBeenCalled();
     });
 
-    it("returns 400 with docker hint including Watchtower when not in git mode", async () => {
-      _existsSync.mockReturnValue(false); // no .git → docker mode → canSelfUpdate() returns false
+    it("returns 400 with manual update hint when not in git mode", async () => {
+      _existsSync.mockReturnValue(false); // no .git → manual mode → canSelfUpdate() returns false
 
       const app = await buildApp();
       const res = await app.request("/admin/apply-update", { method: "POST" });
@@ -511,9 +510,8 @@ describe("E2E: self-update routes", () => {
       const body = await res.json() as Record<string, unknown>;
       expect(body.started).toBe(false);
       expect(String(body.error)).toContain("not available");
-      expect(body.mode).toBe("docker");
-      expect(String(body.hint)).toContain("docker compose pull");
-      expect(String(body.hint)).toContain("Watchtower");
+      expect(body.mode).toBe("manual");
+      expect(String(body.hint)).toContain("update manually");
     });
 
     it("returns 400 with electron auto-updater hint when embedded", async () => {

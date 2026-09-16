@@ -103,7 +103,7 @@ static void show_node_help(DWORD error_code) {
     _snwprintf_s(
         message, sizeof(message) / sizeof(message[0]), _TRUNCATE,
         L"Codex Proxy could not start Node.js (Windows error %lu).\n\n"
-        L"This portable package does not include Node.js. Install Node.js 20 or newer,\n"
+        L"This portable package does not include Node.js. Install Node.js 24 or newer,\n"
         L"or select an existing executable with:\n\n"
         L"  set CODEX_PROXY_NODE=C:\\Path\\to\\node.exe\n"
         L"  codex-proxy.exe -n C:\\Path\\to\\node.exe -m auto\n\n"

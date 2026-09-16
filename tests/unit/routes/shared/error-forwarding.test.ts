@@ -31,12 +31,14 @@ vi.mock("@src/proxy/codex-api.js", () => {
     }
   }
 
-  const CodexApi = vi.fn().mockImplementation(() => ({
-    createResponse: vi.fn((): Promise<Response> => {
-      if (mockCodexCreate) return mockCodexCreate();
-      return Promise.resolve(new Response("data: {}\n\n"));
-    }),
-  }));
+  const CodexApi = vi.fn().mockImplementation(function () {
+    return {
+      createResponse: vi.fn((): Promise<Response> => {
+        if (mockCodexCreate) return mockCodexCreate();
+        return Promise.resolve(new Response("data: {}\n\n"));
+      }),
+    };
+  });
 
   return { CodexApi, CodexApiError };
 });

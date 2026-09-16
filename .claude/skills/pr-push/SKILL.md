@@ -113,14 +113,13 @@ Do **NOT** proceed to Phase 2 until the user has explicitly confirmed (a) commit
      |---|---|
      | `src/**` or `tests/**` | `npm test` and `npx tsc --noEmit` |
      | `web/**` | `npm run build` |
-     | `Dockerfile`, `docker-compose*` | `docker build .` (or note user must verify) |
      | `packages/electron/**`, `electron-builder.yml` | `npm run -w packages/electron build` |
      | `native/**` | `npm run -w native build` |
      Any failure aborts the push — fix and re-run.
 3. Run `git push -u origin HEAD`.
 4. If the push is blocked by the hook:
    - Read the hook output verbatim back to the user.
-   - The hook validates the build targets affected by the diff (test, tsc, web build, Dockerfile lint, Electron config, native addon). Identify which target failed and propose a fix.
+   - The hook validates the build targets affected by the diff (tests, TypeScript, web build, and native addon). Identify which target failed and propose a fix.
    - **Never retry with `--no-verify`.** Re-run the offending check locally, fix the root cause, amend the commit only if the user authorizes it, otherwise add a fix-up commit.
 
 ### Phase 5: Open the PR

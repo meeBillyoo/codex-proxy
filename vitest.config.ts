@@ -4,9 +4,12 @@ import { resolve } from "path";
 export default defineConfig({
   resolve: {
     alias: {
-      "@src": resolve(__dirname, "src"),
-      "@helpers": resolve(__dirname, "tests/_helpers"),
-      "@fixtures": resolve(__dirname, "tests/_fixtures"),
+      "@src": resolve(import.meta.dirname, "src"),
+      "@helpers": resolve(import.meta.dirname, "tests/_helpers"),
+      "@fixtures": resolve(import.meta.dirname, "tests/_fixtures"),
+      "react/jsx-dev-runtime": "preact/jsx-runtime",
+      "react/jsx-runtime": "preact/jsx-runtime",
+      react: "preact/compat",
     },
   },
   test: {
@@ -17,7 +20,6 @@ export default defineConfig({
       "tests/integration/**/*.{test,spec}.ts",
       "tests/contract/**/*.{test,spec}.ts",
       "tests/e2e/**/*.{test,spec}.ts",
-      "packages/electron/__tests__/**/*.{test,spec}.ts",
     ],
   },
 });

@@ -5,11 +5,9 @@
   <p>Codex Desktop の機能を OpenAI / Anthropic / Gemini 標準プロトコルとして公開し、あらゆる AI クライアントとシームレスに連携。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Runtime-Node.js_18+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
+    <img src="https://img.shields.io/badge/Runtime-Node.js_24+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
     <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
     <img src="https://img.shields.io/badge/Framework-Hono-E36002?style=flat-square" alt="Hono">
-    <img src="https://img.shields.io/badge/Docker-Supported-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-    <img src="https://img.shields.io/badge/Desktop-Win%20%7C%20Mac%20%7C%20Linux-8A2BE2?style=flat-square&logo=electron&logoColor=white" alt="Desktop">
     <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
   </p>
 
@@ -65,29 +63,11 @@ ChatGPT アカウント（またはサードパーティ API プロバイダー�
 > **前提条件**：ChatGPT アカウントが必要です（無料アカウントで利用可能）。まだお持ちでない場合は、[chat.openai.com](https://chat.openai.com) で登録してください。
 
 <details>
-<summary><h3>方法 1: デスクトップアプリ（初心者推奨）</h3></summary>
-
-ダウンロード → インストール → 起動するだけですぐに使えます。
-
-**インストーラーのダウンロード** — [Releases ページ](https://github.com/icebear0828/codex-proxy/releases) を開き、OS に合わせたパッケージをダウンロードします：
-
-| OS | ファイル名 |
-|----|------------|
-| Windows | `Codex Proxy Setup x.x.x.exe` |
-| macOS | `Codex Proxy-x.x.x.dmg` |
-| Linux | `Codex Proxy-x.x.x.AppImage` |
-
-インストール後にアプリを起動し、ログインボタンから ChatGPT アカウントでログインします。ブラウザで `http://localhost:8080` を開くとコントロールパネル（ダッシュボード）が表示されます。
-
-</details>
-
-<details>
-<summary><h3>方法 2: No-Node Lite（ブラウザー/サーバー向け、上級者向け）</h3></summary>
+<summary><h3>方法 1: No-Node Lite（ブラウザー/サーバー向け）</h3></summary>
 
 Node.js をすでにインストールしている場合や、サーバー・WSL などデスクトップ環境のない
-マシンで実行したい場合は、No-Node Lite を利用できます。Electron 版と同じバックエンドと
-ダッシュボードを使用しますが、Node.js は同梱しないため、配布ファイルが小さく、実行環境を
-自分で管理できます。Electron 版のインストーラーは変更されません。
+マシンで実行したい場合は、No-Node Lite を利用できます。バックエンドとダッシュボードを
+含みますが、Node.js は同梱しないため、配布ファイルが小さく、実行環境を自分で管理できます。
 
 Releases から `codex-proxy-<version>-no-node-lite-all-platforms.zip` をダウンロードして
 展開し、パッケージのルートで実行します。
@@ -98,7 +78,7 @@ Releases から `codex-proxy-<version>-no-node-lite-all-platforms.zip` をダウ
 ./codex-proxy.sh
 ```
 
-Node.js 20 以降が必要です。Windows では WebView2 を優先して使用し、利用できない場合は
+Node.js 24 以降が必要です。Windows では WebView2 を優先して使用し、利用できない場合は
 システムブラウザーで実際のサーバー URL を開きます。`--mode=server` はサーバーのみ、
 `--mode=browser` はブラウザー、`--mode=webview2` は WebView2 を明示的に指定します。
 WebView2 ランタイムが欠けている状態で `--mode=webview2` を指定すると、まず確認を求め、
@@ -109,24 +89,6 @@ WebView2 ランタイムが欠けている状態で `--mode=webview2` を指定�
 Linux x64 版には glibc 用と musl 用の TLS native addon が含まれているため、一般的な Linux
 ディストリビューションと Alpine Linux で使用できます。Linux ARM など他の native アーキテクチャは
 現在含まれていません。
-
-</details>
-
-<details>
-<summary><h3>方法 3: Docker デプロイ</h3></summary>
-
-```bash
-mkdir codex-proxy && cd codex-proxy
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/docker-compose.yml
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/.env.example
-cp .env.example .env
-docker compose up -d
-# http://localhost:8080 を開いてログイン
-```
-
-> アカウントデータは `data/` ディレクトリに永続化され、再起動しても失われません。他のコンテナから本サービスへ接続する場合は `localhost` ではなくホストの LAN IP（例: `192.168.x.x:8080`）を使用してください。
-
-`docker-compose.yml` 内の Watchtower のコメントアウトを解除すると自動更新が有効になります。Docker 内で Ollama 互換ブリッジを有効にする場合は、後述の [Ollama Bridge の設定](#ollama-bridge-の設定) を参照してください。
 
 </details>
 
@@ -149,7 +111,6 @@ npm run dev                        # 開発モード（ホットリロード）
 > # 2. TLS アドオンのビルド
 > cd native && npm install && npm run build && cd ..
 > ```
-> Docker / デスクトップアプリにはコンパイル済みアドオンが同梱されているため、手動ビルドは不要です。
 
 ブラウザで `http://localhost:8080` を開いてログインします。
 
@@ -790,7 +751,7 @@ model:
 
 ### LAN（ローカルネットワーク）アクセス
 
-ソースコードのデフォルト設定は `127.0.0.1` のみをリッスンします。Electron も `data/local.yaml` で明示的に上書きされない限り `127.0.0.1` を渡します。Docker イメージは `CODEX_PROXY_HOST=0.0.0.0` によりコンテナ内ですべてのインターフェースをリッスンしますが、`docker-compose.yml` はデフォルトでホスト側ポートを `127.0.0.1` にのみバインドしています。
+ソースコードのデフォルト設定は `127.0.0.1` のみをリッスンします。
 
 ローカルマシンからのみアクセスする場合：
 
@@ -799,20 +760,20 @@ server:
   host: "127.0.0.1"
 ```
 
-LAN 内の別デバイスからアクセスする場合は、`data/local.yaml` に以下を追加し、`docker-compose.yml` のポートマッピングを `127.0.0.1:${PORT:-8080}:8080` から `${PORT:-8080}:8080` に変更します：
+LAN 内の別デバイスからアクセスする場合は、`data/local.yaml` に以下を追加します：
 
 ```yaml
 server:
   host: "0.0.0.0"
 ```
 
-Electron デスクトップ版の `data/local.yaml` パス：
+Lite のデフォルトモードにおける `data/local.yaml` パス：
 
 | OS | パス |
 |----|------|
-| macOS | `~/Library/Application Support/Codex Proxy/data/local.yaml` |
-| Windows | `%APPDATA%/Codex Proxy/data/local.yaml` |
-| Linux | `~/.config/Codex Proxy/data/local.yaml` |
+| macOS | `~/Library/Application Support/codex-proxy/data/local.yaml` |
+| Windows | `%APPDATA%/codex-proxy/data/local.yaml` |
+| Linux | `~/.config/codex-proxy/data/local.yaml` |
 
 > ⚠️ `0.0.0.0` にバインドするとサービスが LAN 内に公開されるため、必ずダッシュボードのキー設定で強固な API キーを設定してください。
 
@@ -856,12 +817,6 @@ ollama:
 | `http://localhost:11434/api/show` | POST | モデルメタデータ |
 | `http://localhost:11434/api/chat` | POST | チャット補全（NDJSON ストリーミング対応） |
 | `http://localhost:11434/v1/*` | 任意 | OpenAI `/v1` 直通 |
-
-Docker デプロイでホスト側から `11434` にアクセスする場合：
-
-1. ダッシュボードまたは `data/local.yaml` で `ollama.enabled: true` および `ollama.host: 0.0.0.0` を設定。
-2. `docker-compose.yml` 内の `127.0.0.1:${OLLAMA_BRIDGE_PORT:-11434}:11434` ポートマッピングのコメントアウトを解除。
-3. 認証不要の Ollama API を意図的にネットワーク公開する場合を除き、ホスト側バインドは `127.0.0.1` のままにしてください。
 
 ブラウザからの CORS アクセスは `localhost`、`127.x.x.x`、`::1` などのループバックオリジンのみに制限されています。ローカル外の Web オリジンからブリッジ応答を読み取ることはできません。Bridge は `/v1/*` 直通リクエストに対して設定済みの Codex Proxy API Key を注入するため、localhost 以外に公開することはメインプロキシ API を認証なしで公開することと同等になります。
 
@@ -1075,16 +1030,15 @@ curl -X POST http://localhost:8080/auth/accounts/import \
 
 ## 📋 動作要件
 
-- **Node.js** 18+（20+ 推奨）
-- **Rust** — ソースから実行する場合に必要（TLS ネイティブアドオンのビルド用）。Docker / デスクトップアプリには同梱済み
+- **Node.js** 24+
+- **Rust** — ソースから実行する場合に必要（TLS ネイティブアドオンのビルド用）
 - **ChatGPT アカウント** — 無料アカウントで利用可能
-- **Docker**（オプション）
 
 ## ⚠️ 注意事項
 
 - Codex API は**ストリーミング専用**です。`stream: false` を指定した場合はプロキシ内部でストリームを受信・集約した上で完全な JSON を返却します。
 - 本プロジェクトは Codex Desktop の公開インターフェースに依存しています。アップストリームのバージョン更新時は自動的に検知してフィンガープリントを更新します。
-- Windows 環境でソースからビルドする場合、ネイティブ TLS アドオンのコンパイルに Rust ツールチェーンが必要です（Docker デプロイではビルド済みのため不要）。
+- Windows 環境でソースからビルドする場合、ネイティブ TLS アドオンのコンパイルに Rust ツールチェーンが必要です。
 
 ## 📝 最近の更新
 

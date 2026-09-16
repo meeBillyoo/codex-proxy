@@ -69,36 +69,38 @@ vi.mock("@src/proxy/codex-api.js", () => {
     }
   }
 
-  const CodexApi = vi.fn().mockImplementation(() => ({
-    createResponse: vi.fn((
-      request: CodexResponsesRequest,
-      signal?: AbortSignal,
-      onRateLimits?: (rateLimits: ParsedRateLimit) => void,
-      poolCtx?: WsPoolContext,
-    ): Promise<Response> => {
-      if (mockCreateResponse) return mockCreateResponse(request, signal, onRateLimits, poolCtx);
-      return Promise.resolve(new Response("data: {}\n\n"));
-    }),
-    getUsage: vi.fn((): Promise<CodexUsageResponse> => {
-      if (mockGetUsage) return mockGetUsage();
-      return Promise.resolve({
-        plan_type: "plus",
-        rate_limit: {
-          allowed: true,
-          limit_reached: false,
-          primary_window: {
-            used_percent: 0,
-            reset_after_seconds: 3600,
-            reset_at: Date.now() / 1000 + 3600,
-            limit_window_seconds: 3600,
+  const CodexApi = vi.fn().mockImplementation(function () {
+    return {
+      createResponse: vi.fn((
+        request: CodexResponsesRequest,
+        signal?: AbortSignal,
+        onRateLimits?: (rateLimits: ParsedRateLimit) => void,
+        poolCtx?: WsPoolContext,
+      ): Promise<Response> => {
+        if (mockCreateResponse) return mockCreateResponse(request, signal, onRateLimits, poolCtx);
+        return Promise.resolve(new Response("data: {}\n\n"));
+      }),
+      getUsage: vi.fn((): Promise<CodexUsageResponse> => {
+        if (mockGetUsage) return mockGetUsage();
+        return Promise.resolve({
+          plan_type: "plus",
+          rate_limit: {
+            allowed: true,
+            limit_reached: false,
+            primary_window: {
+              used_percent: 0,
+              reset_after_seconds: 3600,
+              reset_at: Date.now() / 1000 + 3600,
+              limit_window_seconds: 3600,
+            },
+            secondary_window: null,
           },
-          secondary_window: null,
-        },
-        code_review_rate_limit: null,
-        additional_rate_limits: [],
-      });
-    }),
-  }));
+          code_review_rate_limit: null,
+          additional_rate_limits: [],
+        });
+      }),
+    };
+  });
 
   return { CodexApi, CodexApiError, PreviousResponseWebSocketError };
 });

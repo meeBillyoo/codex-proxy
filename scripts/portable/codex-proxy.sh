@@ -7,7 +7,7 @@ cd "$ROOT_DIR"
 node_help() {
   echo "[Portable] $1" >&2
   echo "[Portable] This package does not include Node.js." >&2
-  echo "[Portable] Install Node.js 20 or newer from https://nodejs.org/en/download/" >&2
+  echo "[Portable] Install Node.js 24 or newer from https://nodejs.org/en/download/" >&2
   echo "[Portable] Or run with a specific executable:" >&2
   echo "  CODEX_PROXY_NODE=/opt/node/bin/node ./codex-proxy.sh -m browser" >&2
   echo "  ./codex-proxy.sh -p -m browser" >&2
@@ -87,8 +87,8 @@ case "$NODE_MAJOR" in
     exit 2
     ;;
 esac
-if [ "$NODE_MAJOR" -lt 20 ]; then
-  node_help "Node.js 20 or newer is required; found major version $NODE_MAJOR."
+if [ "$NODE_MAJOR" -lt 24 ]; then
+  node_help "Node.js 24 or newer is required; found major version $NODE_MAJOR."
   exit 2
 fi
 

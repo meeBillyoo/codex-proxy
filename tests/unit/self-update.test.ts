@@ -72,10 +72,10 @@ describe("self-update", () => {
       expect(getDeployMode()).toBe("git");
     });
 
-    it("returns 'docker' when no .git directory", async () => {
+    it("returns 'manual' when no .git directory", async () => {
       _existsSync.mockReturnValue(false);
       const { getDeployMode } = await importFresh();
-      expect(getDeployMode()).toBe("docker");
+      expect(getDeployMode()).toBe("manual");
     });
 
     it("returns 'lite' for the No-Node Lite distribution", async () => {
@@ -150,7 +150,7 @@ describe("self-update", () => {
       }
     });
 
-    it("falls back to git/package.json when PROXY_VERSION is 'unknown' (Dockerfile ARG default)", async () => {
+    it("falls back to git/package.json when PROXY_VERSION is 'unknown'", async () => {
       process.env.PROXY_VERSION = "unknown";
       try {
         _readFileSync.mockReturnValue(JSON.stringify({ version: "2.0.80" }));
@@ -279,45 +279,35 @@ describe("self-update", () => {
     });
   });
 
-  // ── checkProxySelfUpdate (docker mode) ────────────────────────────
+  // ── checkProxySelfUpdate (manual mode) ────────────────────────────
 
-  describe("checkProxySelfUpdate (docker mode)", () => {
+  describe("checkProxySelfUpdate (manual mode)", () => {
     beforeEach(() => {
-      // No .git → docker mode
+      // No .git → manual mode
       _existsSync.mockReturnValue(false);
     });
 
-    // Helper: mock GHCR token + tags + optional GitHub Release
+    // Helper: mock the GitHub Release used by manual installations.
     function mockDockerFetch(
       registryTags: string[],
       releaseData?: { tag_name: string; body: string; html_url: string; published_at: string },
     ): ReturnType<typeof vi.fn> {
-      const mockFetch = vi.fn()
-        // 1st call: GHCR token
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ token: "anon-token" }),
-        })
-        // 2nd call: GHCR tags
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ name: "icebear0828/codex-proxy", tags: registryTags }),
-          headers: new Headers(),
-        });
-
-      // 3rd call: GitHub Release (if update detected)
-      if (releaseData) {
-        mockFetch.mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve(releaseData),
-        });
-      }
+      const latestTag = registryTags.filter((tag) => /^v\d/.test(tag)).at(-1) ?? "v0.0.0";
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve(releaseData ?? {
+          tag_name: latestTag,
+          body: "",
+          html_url: `https://github.com/repo/releases/${latestTag}`,
+          published_at: "2026-03-09T00:00:00Z",
+        }),
+      });
 
       vi.stubGlobal("fetch", mockFetch);
       return mockFetch;
     }
 
-    it("returns release when update available in registry", async () => {
+    it("returns release when an update is available", async () => {
       _readFileSync.mockReturnValue(JSON.stringify({ version: "1.0.0" }));
 
       mockDockerFetch(
@@ -336,12 +326,12 @@ describe("self-update", () => {
       expect(result.release).not.toBeNull();
       expect(result.release!.version).toBe("2.0.0");
       expect(result.release!.body).toBe("New release notes");
-      expect(result.mode).toBe("docker");
+      expect(result.mode).toBe("manual");
 
       vi.unstubAllGlobals();
     });
 
-    it("returns no update when registry version matches current", async () => {
+    it("returns no update when release version matches current", async () => {
       _readFileSync.mockReturnValue(JSON.stringify({ version: "2.0.0" }));
 
       mockDockerFetch(["latest", "v2.0.0"]);
@@ -354,8 +344,7 @@ describe("self-update", () => {
       vi.unstubAllGlobals();
     });
 
-    it("no false positive: registry has same version even if GitHub Release is newer", async () => {
-      // Registry only has v2.0.44 (image not yet published for v2.0.45)
+    it("returns no update when the latest release matches current", async () => {
       _readFileSync.mockReturnValue(JSON.stringify({ version: "2.0.44" }));
 
       mockDockerFetch(["latest", "v2.0.44"]);
@@ -368,35 +357,21 @@ describe("self-update", () => {
       vi.unstubAllGlobals();
     });
 
-    it("synthesizes release info when GitHub Release unavailable", async () => {
+    it("returns no update when GitHub Release is unavailable", async () => {
       _readFileSync.mockReturnValue(JSON.stringify({ version: "1.0.0" }));
 
-      const mockFetch = vi.fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ token: "t" }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ tags: ["latest", "v2.0.0"] }),
-          headers: new Headers(),
-        })
-        // GitHub Release returns 404
-        .mockResolvedValueOnce({ ok: false, json: () => Promise.resolve({}) });
+      const mockFetch = vi.fn().mockResolvedValue({ ok: false, json: () => Promise.resolve({}) });
       vi.stubGlobal("fetch", mockFetch);
 
       const { checkProxySelfUpdate } = await importFresh();
       const result = await checkProxySelfUpdate();
-      expect(result.updateAvailable).toBe(true);
-      expect(result.release).not.toBeNull();
-      expect(result.release!.version).toBe("2.0.0");
-      expect(result.release!.tag).toBe("v2.0.0");
-      expect(result.release!.body).toBe("");
+      expect(result.updateAvailable).toBe(false);
+      expect(result.release).toBeNull();
 
       vi.unstubAllGlobals();
     });
 
-    it("handles GHCR registry error gracefully", async () => {
+    it("handles GitHub release errors gracefully", async () => {
       const mockFetch = vi.fn().mockRejectedValue(new Error("network failure"));
       vi.stubGlobal("fetch", mockFetch);
 

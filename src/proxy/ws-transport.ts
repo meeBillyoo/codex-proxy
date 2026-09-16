@@ -12,7 +12,7 @@
  * CJS init (Receiver/Sender/PerMessageDeflate) is deferred until the
  * WS path is actually exercised. Note: esbuild still bundles ws into
  * the ESM server bundle; that bundling is what makes the
- * `createRequire` banner in packages/electron/electron/build.mjs
+ * `createRequire` banner in scripts/portable/build-server-bundle.mjs
  * load-bearing — without it, ws's `require("events")` etc. throw
  * `Dynamic require of "X" is not supported` at runtime.
  */
@@ -120,8 +120,8 @@ async function getWS(): Promise<typeof import("ws").default> {
 /**
  * Public alias of `getWS` — exposes the lazy ws loader so the Electron
  * bundle smoke test can force ws's CJS factory to run without spinning
- * up the full server. Re-exported via packages/electron/src/electron-entry.ts;
- * consumed by packages/electron/__tests__/build.test.ts.
+ * up the full server. Re-exported via scripts/portable/server-entry.ts;
+ * consumed by the standalone Lite bundle smoke test.
  */
 export const loadWebSocketModule = getWS;
 

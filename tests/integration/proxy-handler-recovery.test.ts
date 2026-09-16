@@ -53,17 +53,19 @@ vi.mock("@src/proxy/codex-api.js", () => {
       this.causeMessage = causeMessage;
     }
   }
-  const CodexApi = vi.fn().mockImplementation(() => ({
-    createResponse: vi.fn((
-      request: CodexResponsesRequest,
-      signal?: AbortSignal,
-      onRateLimits?: (rateLimits: ParsedRateLimit) => void,
-      poolCtx?: WsPoolContext,
-    ): Promise<Response> => {
-      if (mockCreateResponse) return mockCreateResponse(request, signal, onRateLimits, poolCtx);
-      return Promise.resolve(new Response("data: {}\n\n"));
-    }),
-  }));
+  const CodexApi = vi.fn().mockImplementation(function () {
+    return {
+      createResponse: vi.fn((
+        request: CodexResponsesRequest,
+        signal?: AbortSignal,
+        onRateLimits?: (rateLimits: ParsedRateLimit) => void,
+        poolCtx?: WsPoolContext,
+      ): Promise<Response> => {
+        if (mockCreateResponse) return mockCreateResponse(request, signal, onRateLimits, poolCtx);
+        return Promise.resolve(new Response("data: {}\n\n"));
+      }),
+    };
+  });
   return { CodexApi, CodexApiError, PreviousResponseWebSocketError };
 });
 

@@ -3,7 +3,7 @@ import { spawnSync } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
-import asar from "@electron/asar";
+import * as asar from "@electron/asar";
 import yaml from "js-yaml";
 import { parseCheckUpdateAppcast } from "../../scripts/build/check-update.js";
 

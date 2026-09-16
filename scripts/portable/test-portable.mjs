@@ -46,7 +46,10 @@ function commandExists(command) {
 }
 
 function findPython() {
-  return ["python", "python3"].find(commandExists) ?? null;
+  return ["python", "python3"].find((command) => {
+    if (!commandExists(command)) return false;
+    return spawnSync(command, ["--version"], { stdio: "ignore", windowsHide: true }).status === 0;
+  }) ?? null;
 }
 
 function runSync(command, args, options = {}) {
@@ -567,13 +570,13 @@ async function defaultDataModeSmoke(extract, outside, tempRoot) {
   const environment = { CODEX_PROXY_NODE: process.execPath };
   if (process.platform === "win32") {
     environment.APPDATA = userDataBase;
-    userData = join(userDataBase, "@codex-proxy", "electron", "data");
+    userData = join(userDataBase, "codex-proxy", "data");
   } else if (process.platform === "darwin") {
     environment.HOME = userDataBase;
-    userData = join(userDataBase, "Library", "Application Support", "@codex-proxy", "electron", "data");
+    userData = join(userDataBase, "Library", "Application Support", "codex-proxy", "data");
   } else {
     environment.XDG_CONFIG_HOME = userDataBase;
-    userData = join(userDataBase, "@codex-proxy", "electron", "data");
+    userData = join(userDataBase, "codex-proxy", "data");
   }
   const env = testEnvironment(environment);
   delete env.CODEX_PROXY_DATA_DIR;

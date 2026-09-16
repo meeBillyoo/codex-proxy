@@ -7,8 +7,6 @@ const PORTABLE = resolve(ROOT, "scripts", "portable");
 const NATIVE_INDEX = resolve(ROOT, "native", "index.js");
 const NATIVE_PACKAGE = resolve(ROOT, "native", "package.json");
 const NATIVE_MUSL_TEST = resolve(ROOT, "scripts", "native", "test-linux-x64-musl.mjs");
-const RELEASE_WORKFLOW = resolve(ROOT, ".github", "workflows", "release.yml");
-const LITE_CI_WORKFLOW = resolve(ROOT, ".github", "workflows", "lite-ci.yml");
 
 function read(name: string): string {
   return readFileSync(resolve(PORTABLE, name), "utf8");
@@ -53,7 +51,7 @@ describe("No-Node Lite distribution contract", () => {
     expect(source).toContain("-m|-m=*");
     expect(source).toContain('"-n"');
     expect(source).toContain("--portable");
-    expect(source).toContain("Node.js 20 or newer");
+    expect(source).toContain("Node.js 24 or newer");
     expect(source).toContain("15 seconds");
     expect(source).toContain("node_help");
   });
@@ -219,40 +217,4 @@ describe("No-Node Lite distribution contract", () => {
     expect(source).toContain("Download and run the official installer (~2 MB) now?");
   });
 
-  it("assembles one portable release asset from platform native artifacts", () => {
-    const workflow = readFileSync(RELEASE_WORKFLOW, "utf8");
-    expect(workflow).toContain("native-musl:");
-    expect(workflow).toContain("build:linux-x64-musl");
-    expect(workflow).toContain("lite-native-linux-x64-musl");
-    expect(workflow).toContain("Upload native addon for Lite package");
-    expect(workflow).toContain("Download native addons from all release platforms");
-    expect(workflow).toContain("PORTABLE_REQUIRE_WINDOWS_EXE: \"1\"");
-    expect(workflow).toContain("msys2/setup-msys2@v2");
-    expect(workflow).toContain("MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}");
-    expect(workflow).not.toContain("ilammy/msvc-dev-cmd");
-    expect(workflow).not.toContain("WebView2 Bootstrapper");
-    expect(workflow).not.toContain("download-webview2-bootstrapper");
-    expect(workflow).toContain("gh release upload \"$TAG\" portable-release/*.zip");
-  });
-
-  it("has an optional manually dispatched Lite CI workflow", () => {
-    const workflow = readFileSync(LITE_CI_WORKFLOW, "utf8");
-    expect(workflow).not.toContain("pull_request:");
-    expect(workflow).toContain("workflow_dispatch:");
-    expect(workflow).toContain("contents: read");
-    expect(workflow).toContain("codex-proxy-lite-${{ github.run_number }}");
-    expect(workflow).toContain("Build Lite zip");
-    expect(workflow).toContain("Build WebView2 hosts");
-    expect(workflow).toContain("MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}");
-    expect(workflow).not.toContain("MicrosoftEdgeWebView2Setup.exe");
-    expect(workflow).not.toContain("download-webview2-bootstrapper");
-    expect(workflow).toContain("test-portable.mjs");
-    expect(workflow).toContain("cross-platform");
-    expect(workflow).toContain("native-musl:");
-    expect(workflow).toContain("build:linux-x64-musl");
-    expect(workflow).toContain("musl-smoke:");
-    expect(workflow).toContain("macos-latest");
-    expect(workflow).toContain("ubuntu-latest");
-    expect(workflow).not.toContain("gh release upload");
-  });
 });

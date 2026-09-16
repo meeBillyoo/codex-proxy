@@ -171,8 +171,8 @@ describe("web update routes", () => {
       expect(body.proxy.release).toBeNull();
     });
 
-    it("returns cached release for docker mode", async () => {
-      _deployMode = "docker";
+    it("returns cached release for manual mode", async () => {
+      _deployMode = "manual";
       _cachedResult = {
         commitsBehind: 0,
         currentCommit: null,
@@ -186,14 +186,14 @@ describe("web update routes", () => {
           publishedAt: "2026-03-09T00:00:00Z",
         },
         updateAvailable: true,
-        mode: "docker",
+        mode: "manual",
       };
 
       const { app } = buildApp();
       const res = await app.request("/admin/update-status");
       const body = await res.json();
 
-      expect(body.proxy.mode).toBe("docker");
+      expect(body.proxy.mode).toBe("manual");
       expect(body.proxy.release).not.toBeNull();
       expect(body.proxy.release.version).toBe("2.0.0");
       expect(body.proxy.release.body).toBe("Release notes here");
@@ -284,8 +284,8 @@ describe("web update routes", () => {
       expect(body.proxy.mode).toBe("git");
     });
 
-    it("returns release for docker mode", async () => {
-      _deployMode = "docker";
+    it("returns release for manual mode", async () => {
+      _deployMode = "manual";
       _checkResult = {
         commitsBehind: 0,
         currentCommit: null,
@@ -299,7 +299,7 @@ describe("web update routes", () => {
           publishedAt: "2026-03-09T00:00:00Z",
         },
         updateAvailable: true,
-        mode: "docker",
+        mode: "manual",
       };
 
       const { app } = buildApp();
@@ -344,9 +344,9 @@ describe("web update routes", () => {
       expect(lastData.started).toBe(true);
     });
 
-    it("rejects docker mode with Watchtower hint", async () => {
+    it("rejects manual mode with manual update hint", async () => {
       _canSelfUpdate = false;
-      _deployMode = "docker";
+      _deployMode = "manual";
 
       const { app } = buildApp();
       const res = await app.request("/admin/apply-update", { method: "POST" });
@@ -355,9 +355,8 @@ describe("web update routes", () => {
       const body = await res.json();
       expect(body.started).toBe(false);
       expect(body.error).toContain("not available");
-      expect(body.mode).toBe("docker");
-      expect(body.hint).toContain("docker compose pull");
-      expect(body.hint).toContain("Watchtower");
+      expect(body.mode).toBe("manual");
+      expect(body.hint).toContain("update manually");
     });
 
     it("rejects electron mode with auto-updater hint", async () => {
@@ -387,8 +386,6 @@ describe("web update routes", () => {
       expect(body.started).toBe(false);
       expect(body.mode).toBe("lite");
       expect(body.hint).toContain("No-Node Lite");
-      expect(body.hint).not.toContain("docker compose");
-      expect(body.hint).not.toContain("Watchtower");
     });
 
     it("returns error from apply (SSE stream)", async () => {

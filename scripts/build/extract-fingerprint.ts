@@ -17,7 +17,7 @@ import { resolve, join } from "path";
 import { pathToFileURL } from "url";
 import { createHash } from "crypto";
 import { createRequire } from "module";
-import asar from "@electron/asar";
+import * as asar from "@electron/asar";
 import yaml from "js-yaml";
 import type { ExtractedFingerprint } from "./types.js";
 

@@ -61,8 +61,8 @@ if defined NODE_INVALID (
   popd
   exit /b 2
 )
-if %NODE_MAJOR% LSS 20 (
-  call :node_help "Node.js 20 or newer is required; found major version %NODE_MAJOR%."
+if %NODE_MAJOR% LSS 24 (
+  call :node_help "Node.js 24 or newer is required; found major version %NODE_MAJOR%."
   popd
   exit /b 2
 )
@@ -79,7 +79,7 @@ exit /b %EXIT_CODE%
 :node_help
 echo %~1
 echo This portable package does not include Node.js.
-echo Install Node.js 20 or newer from https://nodejs.org/en/download/
+echo Install Node.js 24 or newer from https://nodejs.org/en/download/
 echo Or run the server with a specific executable:
 echo   set CODEX_PROXY_NODE=C:\Path\to\node.exe
 echo   codex-proxy.exe -n C:\Path\to\node.exe -m auto

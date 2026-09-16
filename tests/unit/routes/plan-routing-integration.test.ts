@@ -72,9 +72,9 @@ vi.mock("@src/models/model-fetcher.js", () => ({
 const mockCreateResponse = vi.fn();
 
 vi.mock("@src/proxy/codex-api.js", () => ({
-  CodexApi: vi.fn().mockImplementation(() => ({
-    createResponse: mockCreateResponse,
-  })),
+  CodexApi: vi.fn().mockImplementation(function () {
+    return { createResponse: mockCreateResponse };
+  }),
   CodexApiError: class extends Error {
     status: number;
     body: string;

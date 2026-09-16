@@ -5,11 +5,9 @@
   <p>将 Codex Desktop 的能力以 OpenAI / Anthropic / Gemini 标准协议对外暴露，无缝接入任意 AI 客户端。</p>
 
   <p>
-    <img src="https://img.shields.io/badge/Runtime-Node.js_18+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
+    <img src="https://img.shields.io/badge/Runtime-Node.js_24+-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js">
     <img src="https://img.shields.io/badge/Language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
     <img src="https://img.shields.io/badge/Framework-Hono-E36002?style=flat-square" alt="Hono">
-    <img src="https://img.shields.io/badge/Docker-Supported-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker">
-    <img src="https://img.shields.io/badge/Desktop-Win%20%7C%20Mac%20%7C%20Linux-8A2BE2?style=flat-square&logo=electron&logoColor=white" alt="Desktop">
     <img src="https://img.shields.io/badge/License-Non--Commercial-red?style=flat-square" alt="License">
   </p>
 
@@ -68,28 +66,11 @@
 > **前置条件**：你需要一个 ChatGPT 账号（免费账号即可）。如果还没有，先去 [chat.openai.com](https://chat.openai.com) 注册一个。
 
 <details>
-<summary><h3>方式一：桌面应用（推荐新手）</h3></summary>
-
-下载 → 安装 → 打开就能用。
-
-**下载安装包** — 打开 [Releases 页面](https://github.com/icebear0828/codex-proxy/releases)，根据系统下载：
-
-| 系统 | 文件 |
-|------|------|
-| Windows | `Codex Proxy Setup x.x.x.exe` |
-| macOS | `Codex Proxy-x.x.x.dmg` |
-| Linux | `Codex Proxy-x.x.x.AppImage` |
-
-安装后打开应用，点击登录按钮用 ChatGPT 账号登录。浏览器访问 `http://localhost:8080` 即可看到控制面板。
-
-</details>
-
-<details>
-<summary><h3>方式二：No-Node Lite（浏览器/服务器版，适合高级用户）</h3></summary>
+<summary><h3>方式一：No-Node Lite（浏览器/服务器版）</h3></summary>
 
 如果你已经安装 Node.js，或者需要在服务器、WSL 等没有桌面环境的机器上运行
-Codex Proxy，可以选择 No-Node Lite。它使用与 Electron 版相同的后端和控制面板，
-但不内置 Node.js，因此包更小，也方便你自行管理运行时；上面的 Electron 安装包不受影响。
+Codex Proxy，可以选择 No-Node Lite。它包含后端和控制面板，但不内置 Node.js，
+因此包更小，也方便你自行管理运行时。
 正式制品使用 `codex-proxy-<版本>-no-node-lite-all-platforms.zip`，解压后在包根目录运行对应入口：
 
 ```bash
@@ -98,7 +79,7 @@ Codex Proxy，可以选择 No-Node Lite。它使用与 Electron 版相同的后�
 ./codex-proxy.sh
 ```
 
-使用前请准备 Node.js 20 或更新版本。Lite 默认使用与 Electron 相同的系统用户数据目录；
+使用前请准备 Node.js 24 或更新版本。Lite 默认使用系统用户数据目录；
 只有显式传入 `--portable`（简写为 `-p`）时，才使用发行包目录下的 `data/`。
 可以使用 `--mode=server`（`-m server`）只启动服务、`--mode=browser` 强制使用浏览器，
 或在 Windows 上使用 `--mode=webview2` 强制使用 WebView2。`--host`、`--port`、
@@ -113,43 +94,6 @@ Releases 页面，暂不自动覆盖正在运行的包。
 
 Linux x64 Lite 同时包含 glibc 和 musl 两种 TLS native addon，可用于常见 Linux 发行版
 以及 Alpine Linux；目前不提供 Linux ARM 等其他架构的 native addon。
-
-</details>
-
-<details>
-<summary><h3>方式三：Docker 部署</h3></summary>
-
-最简单的方式，一条命令即可启动：
-
-```bash
-docker run -d --name codex-proxy --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
-  -v codex-proxy-data:/app/data \
-  -v codex-proxy-config:/app/config \
-  ghcr.io/icebear0828/codex-proxy:latest-lite
-# 打开 http://localhost:8080 登录
-```
-
-> 该镜像基于 Alpine Linux + Node.js，只包含应用本体、前端页面和运行必需的原生组件，编译工具链、依赖缓存等仅构建时使用的内容均已移除；**功能完整**，Web 面板、账号管理、Ollama 桥接等都可正常使用，目前提供 linux/amd64。压缩后拉取约 57MB（另一版本基于 Debian，约 722MB），空闲内存约 40MB。首次启动会自动在 `codex-proxy-config` 卷中生成默认配置，账号数据保存在 `codex-proxy-data` 卷，更新镜像不丢失。需要让局域网其他设备访问时，把端口参数改成 `-p 8080:8080`。
-
-已经在用 `docker-compose.yml`（默认 `:latest` 基于 Debian，含编译工具链，便于在容器内调试或从源码构建）的用户无需迁移：两个镜像的目录布局与 `./data`、`./config` 卷完全一致，把 compose 里的 `image` 换成 `ghcr.io/icebear0828/codex-proxy:latest-lite` 即可。
-
-需要配置环境变量、自动更新等更多选项时，使用 compose 方式：
-
-```bash
-mkdir codex-proxy && cd codex-proxy
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/docker-compose.yml
-curl -O https://raw.githubusercontent.com/icebear0828/codex-proxy/master/.env.example
-cp .env.example .env
-docker compose up -d
-# 打开 http://localhost:8080 登录
-```
-
-> 账号数据保存在 `data/` 文件夹，重启不丢失。其他容器连本服务用宿主机 IP（如 `192.168.x.x:8080`），不要用 `localhost`。
-
-取消 `docker-compose.yml` 中 Watchtower 的注释即可自动更新。若要在 Docker 中启用 Ollama 兼容桥接，请参考下方 [Ollama Bridge 配置](#ollama-bridge-配置)。
-
-> **内存设置**：`docker-compose.yml` 默认使用 `MEM_LIMIT=768m` 和 `NODE_OPTIONS=--max-old-space-size=512`。在 `.env` 中设置这两个变量即可按机器覆盖默认值。不设这两个参数时，Node/V8 会按**宿主机全部内存**（而不是这个容器实际该用多少）估算堆上限，在内存有限的机器上（尤其是和其他服务共享的 VPS）可能导致内存使用一路涨上去、GC 收得太晚，严重时能把整台宿主机拖垮。请按你机器的实际内存调整这两个值——`mem_limit` 留够给其他服务的余量，`--max-old-space-size` 要明显小于 `mem_limit`（Node 进程的 RSS 不止是 V8 堆）。
 
 </details>
 
@@ -174,7 +118,6 @@ npm run dev                        # 开发模式（热重载）
 > cd native && npm install && npm run build && cd ..
 > ```
 >
-> Docker / 桌面应用已内置编译好的 addon，无需手动编译。
 
 打开 `http://localhost:8080` 登录。
 
@@ -865,7 +808,7 @@ model:
 
 ### 局域网访问
 
-源码默认配置仅监听 `127.0.0.1`；Electron 也会传入 `127.0.0.1`，除非 `data/local.yaml` 显式覆盖。Docker 镜像会通过 `CODEX_PROXY_HOST=0.0.0.0` 在容器内监听所有接口，`docker-compose.yml` 默认仍只把宿主机端口绑定到 `127.0.0.1`。
+源码默认配置仅监听 `127.0.0.1`，除非 `data/local.yaml` 显式覆盖。
 
 需要仅本机访问时写入：
 
@@ -874,23 +817,20 @@ server:
   host: "127.0.0.1"
 ```
 
-如需局域网内其他设备访问，在 `data/local.yaml` 中添加，并把 `docker-compose.yml` 的端口映射从 `127.0.0.1:${PORT:-8080}:8080` 改成 `${PORT:-8080}:8080`：
+如需局域网内其他设备访问，在 `data/local.yaml` 中添加：
 
 ```yaml
 server:
   host: "0.0.0.0"
 ```
 
-Electron 桌面版的 `data/local.yaml` 路径：
-
-当前 Electron 构建的实际 `app.getPath("userData")` 目录名为
-`@codex-proxy/electron`；下面路径以该目录为准。
+Lite 默认模式的 `data/local.yaml` 路径：
 
 | 系统 | 路径 |
 |------|------|
-| macOS | `~/Library/Application Support/@codex-proxy/electron/data/local.yaml` |
-| Windows | `%APPDATA%/@codex-proxy/electron/data/local.yaml` |
-| Linux | `~/.config/@codex-proxy/electron/data/local.yaml` |
+| macOS | `~/Library/Application Support/codex-proxy/data/local.yaml` |
+| Windows | `%APPDATA%/codex-proxy/data/local.yaml` |
+| Linux | `~/.config/codex-proxy/data/local.yaml` |
 
 > ⚠️ 绑定 `0.0.0.0` 会将服务暴露到局域网，务必在 Dashboard → 密钥设置中配置强密钥。
 
@@ -934,12 +874,6 @@ ollama:
 | `http://localhost:11434/api/show` | POST | 模型元数据 |
 | `http://localhost:11434/api/chat` | POST | 聊天补全，支持流式 NDJSON |
 | `http://localhost:11434/v1/*` | 任意 | OpenAI `/v1` 直通 |
-
-Docker 部署时，如果希望宿主机访问 `11434`：
-
-1. 在 Dashboard 或 `data/local.yaml` 中设置 `ollama.enabled: true` 和 `ollama.host: 0.0.0.0`。
-2. 取消 `docker-compose.yml` 中 `127.0.0.1:${OLLAMA_BRIDGE_PORT:-11434}:11434` 端口映射的注释。
-3. 保持宿主机绑定 `127.0.0.1`，除非你明确知道自己要把无鉴权 Ollama API 暴露到网络。
 
 浏览器 CORS 访问仅允许 `localhost`、`127.x.x.x`、`::1` 等 loopback origin；非本机网页来源不能读取桥接响应。Bridge 会为 `/v1/*` 直通请求注入已配置的 Codex Proxy API Key，因此暴露到 localhost 之外时，相当于也把主代理 API 以无鉴权方式暴露出去。
 
@@ -1153,13 +1087,12 @@ curl -X POST http://localhost:8080/auth/accounts/import \
 
 ## 📋 系统要求
 
-- **Node.js** 18+（推荐 20+）
+- **Node.js** 24+
 
-- **Rust** — 源码运行需 Rust 工具链（编译 TLS native addon）；Docker / 桌面应用已内置
+- **Rust** — 源码运行需 Rust 工具链（编译 TLS native addon）
 
 - **ChatGPT 账号** — 免费账号即可
 
-- **Docker**（可选）
 
 ## ⚠️ 注意事项
 
@@ -1167,7 +1100,7 @@ curl -X POST http://localhost:8080/auth/accounts/import \
 
 - 本项目依赖 Codex Desktop 的公开接口，上游版本更新时会自动检测并更新指纹
 
-- Windows 下 native TLS addon 需 Rust 工具链编译；Docker 部署已预编译，无需额外配置
+- Windows 下 native TLS addon 需 Rust 工具链编译
 
 ## 📝 最近更新
 

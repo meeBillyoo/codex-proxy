@@ -99,15 +99,17 @@ vi.mock("@src/proxy/codex-api.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@src/proxy/codex-api.js")>();
   return {
     ...actual,
-    CodexApi: vi.fn().mockImplementation(() => ({
-      createCompactResponse: vi.fn(async (req: unknown) => {
-        capturedCompactRequest = req;
-        if (mockCompactThrow) mockCompactThrow();
-        return mockCompactResponse;
-      }),
-      createResponse: vi.fn(),
-      parseStream: vi.fn(),
-    })),
+    CodexApi: vi.fn().mockImplementation(function () {
+      return {
+        createCompactResponse: vi.fn(async (req: unknown) => {
+          capturedCompactRequest = req;
+          if (mockCompactThrow) mockCompactThrow();
+          return mockCompactResponse;
+        }),
+        createResponse: vi.fn(),
+        parseStream: vi.fn(),
+      };
+    }),
   };
 });
 

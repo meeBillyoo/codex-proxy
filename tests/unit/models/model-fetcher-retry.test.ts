@@ -14,9 +14,9 @@ vi.mock("@src/paths.js", () => ({
 const mockGetModels = vi.fn<() => Promise<Array<{ slug: string }>>>();
 
 vi.mock("@src/proxy/codex-api.js", () => ({
-  CodexApi: vi.fn().mockImplementation(() => ({
-    getModels: mockGetModels,
-  })),
+  CodexApi: vi.fn().mockImplementation(function () {
+    return { getModels: mockGetModels };
+  }),
 }));
 
 vi.mock("@src/models/model-store.js", () => ({

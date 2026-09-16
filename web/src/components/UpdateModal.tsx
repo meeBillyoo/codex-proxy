@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "preact/hooks";
 import { useI18n } from "../../../shared/i18n/context";
-import { clipboardCopy } from "../../../shared/utils/clipboard";
 import type { UpdateStep } from "../../../shared/hooks/use-update-status";
 import type { TranslationKey } from "../../../shared/i18n/translations";
 
@@ -14,7 +13,7 @@ const STEP_LABELS: Record<string, TranslationKey> = {
 interface UpdateModalProps {
   open: boolean;
   onClose: () => void;
-  mode: "git" | "docker" | "electron" | "lite";
+  mode: "git" | "manual" | "electron" | "lite";
   commits: { hash: string; message: string }[];
   changelog: string | null;
   release: { version: string; body: string; url: string } | null;
@@ -187,20 +186,8 @@ export function UpdateModal({
                 )}
                 {applying ? t("applyingUpdate") : t("updateNow")}
               </button>
-            ) : mode === "docker" ? (
-              <div class="flex flex-col items-end gap-1.5">
-                <button
-                  onClick={() => { void clipboardCopy("docker compose pull && docker compose up -d"); }}
-                  class="px-4 py-2 text-xs font-semibold bg-primary-action text-white rounded-lg hover:bg-primary-action-hover transition-colors"
-                >
-                  {t("copy")} docker compose pull && docker compose up -d
-                </button>
-                <span class="text-[10px] text-slate-400 dark:text-text-dim">
-                  {t("dockerAutoUpdateHint")}
-                </span>
-              </div>
             ) : (
-              // Electron and Lite modes: link to GitHub release page for manual download
+              // Electron, Lite, and manual modes: link to GitHub release page for manual download
               release?.url ? (
                 <a
                   href={release.url}

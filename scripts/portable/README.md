@@ -1,9 +1,8 @@
 # No-Node Lite Browser/Server distribution
 
-This distribution keeps the existing Electron package unchanged. It contains
-the bundled backend and web assets, but does not contain Node.js. It uses the
-same per-user data directory as Electron by default; pass `--portable` when
-you explicitly want runtime data beside the package.
+This distribution contains the bundled backend and web assets, but does not
+contain Node.js. It uses a per-user data directory by default; pass
+`--portable` when you explicitly want runtime data beside the package.
 
 After extracting the `zip` archive, the top-level entry points are:
 
@@ -11,7 +10,7 @@ After extracting the `zip` archive, the top-level entry points are:
 - `codex-proxy.cmd` on Windows, always included as a script fallback;
 - `codex-proxy.sh` on macOS/Linux.
 
-The launcher uses the system Node.js by default. Node.js 20 or newer is
+The launcher uses the system Node.js by default. Node.js 24 or newer is
 required for this release. A custom path can be supplied before the
 application arguments:
 
@@ -41,11 +40,9 @@ desired. Supported modes are:
   --help, -h                  Show this help
 ```
 
-Without `--portable`, the launcher uses the Electron-compatible per-user data
-directory (`%APPDATA%/@codex-proxy/electron/data` on Windows,
-`~/.config/@codex-proxy/electron/data` on Linux, and
-`~/Library/Application Support/@codex-proxy/electron/data` on macOS). This
-allows the No-Node Lite package to reuse the existing Electron configuration.
+Without `--portable`, the launcher uses the per-user data directory
+(`%APPDATA%/codex-proxy/data` on Windows, `~/.config/codex-proxy/data` on
+Linux, and `~/Library/Application Support/codex-proxy/data` on macOS).
 With `--portable`, all runtime data is kept in the package's `data/` directory.
 The two modes must not be run concurrently against the same data directory.
 
@@ -108,7 +105,7 @@ timeout. They never silently download or install Node.js.
 The launcher changes the child process working directory to the package root
 before starting `app/server.mjs`. Resource paths for `config/`, `public/`,
 `bin/`, and `native/` remain package-local in both modes; only mutable runtime
-data switches between the Electron-compatible user directory and package-local
+data switches between the per-user directory and package-local
 `data/`.
 
 The package is intentionally bring-your-own-Node. It does not silently
@@ -146,7 +143,7 @@ smoke path, browser URL forwarding, and the non-Windows WebView2 error:
 
 On an isolated Windows runner, add `--test-native-launcher` to also start the
 native `codex-proxy.exe`. The native launcher uses a single-instance mutex, so
-this option should not be run while another Lite/Electron launcher is active
+this option should not be run while another Lite launcher is active
 for the same user session.
 
 CI runs the same test on Windows, macOS, and Linux. The native build matrix
