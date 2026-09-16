@@ -98,6 +98,18 @@ Linux x64 版には glibc 用と musl 用の TLS native addon が含まれてい
 ```bash
 git clone https://github.com/icebear0828/codex-proxy.git
 cd codex-proxy
+
+# Node.js 24 を優先。現在のメジャーバージョンが 24 でなければ nvm でインストールして切り替える
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+if [ "$NODE_MAJOR" != "24" ]; then
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  [ -s "$NVM_DIR/nvm.sh" ] || curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  . "$NVM_DIR/nvm.sh"
+  nvm install 24
+  nvm use 24
+fi
+node --version                    # v24.x.x であることを確認
+
 npm install                        # バックエンド依存関係のインストール
 cd web && npm install && cd ..     # フロントエンド依存関係のインストール
 npm run dev                        # 開発モード（ホットリロード）

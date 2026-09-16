@@ -40,16 +40,35 @@ Authorization: Bearer <PROXY_API_KEY>
 
 ## 首次部署
 
-服务器使用以下 Node.js：
-
-```text
-/home/collaborators/.nvm/versions/node/v24.19.0/bin/node
-```
-
-在服务器执行：
+部署前先检查 Node.js 主版本。本项目优先使用 Node.js 24；如果服务器当前不是
+Node.js 24，则安装或加载 nvm，再安装并切换到 Node.js 24：
 
 ```bash
-export PATH=/home/collaborators/.nvm/versions/node/v24.19.0/bin:$PATH
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+
+if [ "$NODE_MAJOR" != "24" ]; then
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+
+  if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  fi
+
+  . "$NVM_DIR/nvm.sh"
+  nvm install 24
+  nvm use 24
+  nvm alias default 24
+fi
+
+node --version
+npm --version
+```
+
+`node --version` 必须输出 `v24.x.x` 后再继续安装部署。如果服务器已经是 Node.js
+24，可直接复用当前 Node.js，无需强制改用 nvm。
+
+然后执行：
+
+```bash
 cd /home/collaborators/services/codex-proxy/source
 
 npm ci
@@ -77,8 +96,8 @@ EnvironmentFile=/home/collaborators/services/codex-proxy/.env
 Environment=NODE_ENV=production
 Environment=PORT=8221
 Environment=CODEX_PROXY_HOST=0.0.0.0
-Environment=PATH=/home/collaborators/.nvm/versions/node/v24.19.0/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/collaborators/.nvm/versions/node/v24.19.0/bin/node dist/index.js
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/bin/bash -lc 'if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; nvm use 24 >/dev/null; fi; exec node dist/index.js'
 Restart=always
 RestartSec=3
 TimeoutStopSec=30
@@ -131,7 +150,16 @@ systemctl --user restart codex-proxy.service
 更新源码后重新部署：
 
 ```bash
-export PATH=/home/collaborators/.nvm/versions/node/v24.19.0/bin:$PATH
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+if [ "$NODE_MAJOR" != "24" ]; then
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  [ -s "$NVM_DIR/nvm.sh" ] || curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  . "$NVM_DIR/nvm.sh"
+  nvm install 24
+  nvm use 24
+fi
+
+node --version  # 必须为 v24.x.x
 cd /home/collaborators/services/codex-proxy/source
 npm ci
 cd web && npm ci && npm run build && cd ..

@@ -74,6 +74,18 @@ Linux x64 Lite includes both glibc and musl TLS native addons, so it can be used
 ```bash
 git clone https://github.com/icebear0828/codex-proxy.git
 cd codex-proxy
+
+# Prefer Node.js 24. If another major is active, install/switch with nvm.
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+if [ "$NODE_MAJOR" != "24" ]; then
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  [ -s "$NVM_DIR/nvm.sh" ] || curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  . "$NVM_DIR/nvm.sh"
+  nvm install 24
+  nvm use 24
+fi
+node --version                    # Must be v24.x.x
+
 npm install                        # Backend dependencies
 cd web && npm install && cd ..     # Frontend dependencies
 npm run dev                        # Dev mode (hot reload)

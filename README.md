@@ -103,6 +103,18 @@ Linux x64 Lite 同时包含 glibc 和 musl 两种 TLS native addon，可用于�
 ```bash
 git clone https://github.com/icebear0828/codex-proxy.git
 cd codex-proxy
+
+# 优先使用 Node.js 24；当前主版本不是 24 时，通过 nvm 安装并切换
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
+if [ "$NODE_MAJOR" != "24" ]; then
+  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+  [ -s "$NVM_DIR/nvm.sh" ] || curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+  . "$NVM_DIR/nvm.sh"
+  nvm install 24
+  nvm use 24
+fi
+node --version                    # 应为 v24.x.x
+
 npm install                        # 安装后端依赖
 cd web && npm install && cd ..     # 安装前端依赖
 npm run dev                        # 开发模式（热重载）
