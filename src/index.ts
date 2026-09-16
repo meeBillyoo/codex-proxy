@@ -58,6 +58,7 @@ import { startOllamaBridge, stopOllamaBridge } from "./ollama/server.js";
 import { createOfficialAgentRoutes } from "./routes/official-agent.js";
 import { installUncaughtErrorHandlers } from "./logs/error-log.js";
 import { awaitServerListening } from "./utils/await-listening.js";
+import { isDirectRun } from "./utils/is-direct-run.js";
 
 export interface ServerHandle {
   close: () => Promise<void>;
@@ -393,8 +394,7 @@ async function main() {
 }
 
 // Only run CLI entry when executed directly (not imported by Electron)
-const isDirectRun = process.argv[1]?.includes("index");
-if (isDirectRun) {
+if (isDirectRun(import.meta.url)) {
   main().catch((err) => {
     console.error("Fatal error:", err);
     process.kill(process.pid, "SIGTERM");
