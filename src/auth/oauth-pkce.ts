@@ -541,6 +541,27 @@ export interface CliAuthJson {
   refresh_token?: string;
   id_token?: string;
   expires_at?: number;
+  tokens?: {
+    access_token?: string;
+    refresh_token?: string;
+    id_token?: string;
+    account_id?: string;
+  };
+}
+
+/** Normalize both legacy and current Codex CLI auth.json layouts. */
+export function normalizeCliAuth(data: CliAuthJson): CliAuthJson {
+  const accessToken = data.access_token || data.tokens?.access_token;
+  if (!accessToken) {
+    throw new Error("CLI auth.json does not contain access_token");
+  }
+
+  return {
+    ...data,
+    access_token: accessToken,
+    refresh_token: data.refresh_token || data.tokens?.refresh_token,
+    id_token: data.id_token || data.tokens?.id_token,
+  };
 }
 
 /**
@@ -579,11 +600,7 @@ export function importCliAuth(): CliAuthJson {
   const raw = readFileSync(authPath, "utf-8");
   const data = JSON.parse(raw) as CliAuthJson;
 
-  if (!data.access_token) {
-    throw new Error("CLI auth.json does not contain access_token");
-  }
-
-  return data;
+  return normalizeCliAuth(data);
 }
 
 function callbackResultHtml(success: boolean, error?: string): string {
