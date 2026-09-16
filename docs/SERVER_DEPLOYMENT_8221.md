@@ -7,10 +7,10 @@
 - 工作目录：`/home/collaborators/services/codex-proxy`
 - 源码目录：`/home/collaborators/services/codex-proxy/source`
 - 监听地址：`0.0.0.0:8221`
-- 运行方式：Node.js 24 + systemd user service
-- systemd 服务名：`codex-proxy.service`
+- 运行方式：Node.js 24 + PM2
+- PM2 任务名：`codex-proxy`
 
-本方案不使用 Docker 或 Podman。
+本方案不使用 Docker、Podman 或自定义 systemd 服务，应用进程统一由 PM2 管理。
 
 ## Key 配置
 
@@ -77,74 +77,85 @@ npm ci
 npm run build
 cd ..
 npx tsc
-
-mkdir -p ~/.config/systemd/user
 ```
 
-启动前创建 `~/.config/systemd/user/codex-proxy.service`：
-
-```ini
-[Unit]
-Description=Codex Proxy API on port 8221
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/home/collaborators/services/codex-proxy/source
-EnvironmentFile=/home/collaborators/services/codex-proxy/.env
-Environment=NODE_ENV=production
-Environment=PORT=8221
-Environment=CODEX_PROXY_HOST=0.0.0.0
-Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=/bin/bash -lc 'if [ -s "$HOME/.nvm/nvm.sh" ]; then . "$HOME/.nvm/nvm.sh"; nvm use 24 >/dev/null; fi; exec node dist/index.js'
-Restart=always
-RestartSec=3
-TimeoutStopSec=30
-StandardOutput=append:/home/collaborators/services/codex-proxy/service.log
-StandardError=append:/home/collaborators/services/codex-proxy/service.log
-
-[Install]
-WantedBy=default.target
-```
-
-保存服务文件后执行：
+安装 PM2：
 
 ```bash
-systemctl --user daemon-reload
-systemctl --user enable --now codex-proxy.service
+npm install --global pm2
+pm2 --version
 ```
 
-管理员需要为 `collaborators` 开启 linger，确保退出 SSH 和服务器重启后服务仍能启动：
+加载服务环境变量并创建 PM2 任务：
 
 ```bash
-sudo loginctl enable-linger collaborators
+cd /home/collaborators/services/codex-proxy/source
+
+set -a
+. /home/collaborators/services/codex-proxy/.env
+set +a
+
+export NODE_ENV=production
+export PORT=8221
+export CODEX_PROXY_HOST=0.0.0.0
+
+pm2 start dist/index.js \
+  --name codex-proxy \
+  --cwd /home/collaborators/services/codex-proxy/source \
+  --interpreter "$(command -v node)" \
+  --time
+
+pm2 save
 ```
+
+`pm2 save` 保存当前任务列表。需要开机自动恢复时执行：
+
+```bash
+pm2 startup
+# 按照 pm2 输出的提示，复制并执行它生成的命令
+pm2 save
+```
+
+PM2 的系统启动钩子只负责恢复 PM2 任务列表；`codex-proxy` 的启动、停止、重启和日志
+仍全部由 PM2 管理。如果服务器已有统一的 PM2 开机启动方案，直接复用该方案。不要为
+本应用单独创建 `codex-proxy.service`。未配置开机启动时，服务器重启后可手动执行
+`pm2 resurrect` 恢复任务。
 
 ## 日常运维
 
 查看状态：
 
 ```bash
-systemctl --user status codex-proxy.service --no-pager
+pm2 status
+pm2 describe codex-proxy
 ```
 
 查看日志：
 
 ```bash
-tail -n 200 /home/collaborators/services/codex-proxy/service.log
+pm2 logs codex-proxy --lines 200 --nostream
 ```
 
 实时日志：
 
 ```bash
-tail -f /home/collaborators/services/codex-proxy/service.log
+pm2 logs codex-proxy
 ```
 
 重启服务：
 
 ```bash
-systemctl --user restart codex-proxy.service
+set -a
+. /home/collaborators/services/codex-proxy/.env
+set +a
+pm2 restart codex-proxy --update-env
+```
+
+停止或重新启动任务：
+
+```bash
+pm2 stop codex-proxy
+pm2 start codex-proxy
 ```
 
 更新源码后重新部署：
@@ -164,7 +175,25 @@ cd /home/collaborators/services/codex-proxy/source
 npm ci
 cd web && npm ci && npm run build && cd ..
 npx tsc
-systemctl --user restart codex-proxy.service
+
+set -a
+. /home/collaborators/services/codex-proxy/.env
+set +a
+export NODE_ENV=production
+export PORT=8221
+export CODEX_PROXY_HOST=0.0.0.0
+
+if pm2 describe codex-proxy >/dev/null 2>&1; then
+  pm2 restart codex-proxy --update-env
+else
+  pm2 start dist/index.js \
+    --name codex-proxy \
+    --cwd /home/collaborators/services/codex-proxy/source \
+    --interpreter "$(command -v node)" \
+    --time
+fi
+
+pm2 save
 ```
 
 ## 首次登录上游账号
@@ -228,7 +257,7 @@ http://34.28.243.240:8221/v1
 
 ## 2026-09-16 部署验收记录
 
-- `codex-proxy.service`：运行中
+- PM2 任务 `codex-proxy`：`online`
 - `0.0.0.0:8221`：监听成功
 - 外部地址 `http://34.28.243.240:8221/health`：HTTP `200`
 - `/v1/models` 不携带 Key：HTTP `401`
