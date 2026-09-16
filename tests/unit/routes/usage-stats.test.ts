@@ -15,13 +15,11 @@ import type { AccountPool } from "@src/auth/account-pool.js";
 
 function createMockPool(totals: { input_tokens: number; output_tokens: number; request_count: number; cached_tokens?: number }): AccountPool {
   return {
-    getAllEntries: () => [
-      {
+    getCurrentEntry: () => ({
         id: "e1",
         status: "active",
         usage: { ...totals, cached_tokens: totals.cached_tokens ?? 0 },
-      },
-    ],
+      }),
   } as unknown as AccountPool;
 }
 

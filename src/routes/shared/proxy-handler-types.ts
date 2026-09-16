@@ -3,7 +3,6 @@ import type { StatusCode } from "hono/utils/http-status";
 import type { AccountPool } from "../../auth/account-pool.js";
 import type { CodexResponsesRequest } from "../../proxy/codex-api.js";
 import type { CookieJar } from "../../proxy/cookie-jar.js";
-import type { ProxyPool } from "../../proxy/proxy-pool.js";
 import type { UpstreamAdapter } from "../../proxy/upstream-adapter.js";
 import type { UsageInfo } from "../../translation/codex-event-extractor.js";
 import type { StreamCloseContextBase } from "../../logs/stream-close-event.js";
@@ -103,7 +102,6 @@ export interface HandleProxyRequestOptions {
   cookieJar?: CookieJar;
   req: ProxyRequest;
   fmt: FormatAdapter;
-  proxyPool?: ProxyPool;
 }
 
 export interface HandleDirectRequestOptions {

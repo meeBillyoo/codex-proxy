@@ -41,11 +41,6 @@ export interface StreamCloseContextBase {
   accountEntryId?: string | null;
   variantHash?: string | null;
   responseId?: string | null;
-  /** True when this request was served by a fallback account (not the first
-   *  acquired account). Lets the close-event-generated audit row carry the
-   *  same "fallback" badge as the main egress line. Optional — omit/undefined
-   *  when the caller cannot reliably determine fallback status. */
-  fallback?: boolean;
 }
 
 export interface StreamCloseEvent extends StreamCloseContextBase {
@@ -113,7 +108,6 @@ export function recordStreamCloseEvent(evt: StreamCloseEvent): void {
         accountEntryId: evt.accountEntryId,
         variantHash: evt.variantHash,
         responseId: evt.responseId,
-        fallback: evt.fallback === true ? true : undefined,
         eventCount: evt.eventCount,
         hadReasoning: evt.hadReasoning,
         closeCode: evt.closeCode,
@@ -135,7 +129,6 @@ export function recordStreamCloseEvent(evt: StreamCloseEvent): void {
     model: evt.model ?? null,
     provider: evt.provider ?? "codex",
     account: evt.accountEntryId ? evt.accountEntryId.slice(0, 8) : undefined,
-    ...(evt.fallback !== undefined ? { fallback: evt.fallback } : {}),
     status: numericStatus,
     stream: true,
     error: message,

@@ -15,8 +15,6 @@ export interface LogRecord {
   provider?: string | null;
   /** Human-readable identifier of the current Codex CLI account. */
   account?: string | null;
-  /** True when this request completed through a retry path. */
-  fallback?: boolean;
   status?: number | null;
   latencyMs?: number | null;
   stream?: boolean | null;
@@ -160,7 +158,6 @@ export class LogStore {
         if (patch.latencyMs !== undefined) record.latencyMs = patch.latencyMs;
         if (patch.model !== undefined) record.model = patch.model;
         if (patch.account !== undefined) record.account = patch.account;
-        if (patch.fallback !== undefined) record.fallback = patch.fallback;
         if (patch.error !== undefined) record.error = patch.error;
         if (patch.ttftMs !== undefined) record.ttftMs = patch.ttftMs;
         if (patch.durationMs !== undefined) record.durationMs = patch.durationMs;

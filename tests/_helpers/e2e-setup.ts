@@ -17,7 +17,7 @@
  *   - @hono/node-server/serve-static — passthrough middleware
  *
  * Real modules (run unmodified):
- *   AccountPool, CookieJar, ProxyPool, CodexApi, withRetry,
+ *   AccountPool, CookieJar, CodexApi, withRetry,
  *   all translation layers, all middleware, all routes, fingerprint manager, model store
  */
 

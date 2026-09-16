@@ -7,7 +7,6 @@ import { annotateUsageCost } from "./proxy-handler-utils.js";
 import type { CodexApi, WsPoolContext } from "../../proxy/codex-api.js";
 import { CodexApiError } from "../../proxy/codex-api.js";
 import type { CookieJar } from "../../proxy/cookie-jar.js";
-import type { ProxyPool } from "../../proxy/proxy-pool.js";
 import type { UpstreamPrematureCloseError, UsageInfo, EmptyResponseError } from "../../translation/codex-event-extractor.js";
 import type {
   FormatAdapter,
@@ -221,7 +220,7 @@ export function handleNonStreamingEmptyResponseExhausted(
 
   return {
     status: 502,
-    message: "Codex returned empty responses across all available accounts",
+    message: "Codex returned empty responses after retrying the current CLI account",
   };
 }
 
@@ -248,7 +247,6 @@ export interface RetryNonStreamingEmptyResponseOptions {
   attempt: number;
   maxRetries: number;
   cookieJar?: CookieJar;
-  proxyPool?: ProxyPool;
   abortSignal: AbortSignal;
   released: Set<string>;
   requestId: string;
@@ -271,7 +269,6 @@ export async function retryNonStreamingEmptyResponse(
     attempt,
     maxRetries,
     cookieJar,
-    proxyPool,
     abortSignal,
     released,
     requestId,
@@ -291,7 +288,7 @@ export async function retryNonStreamingEmptyResponse(
   released.delete(currentEntryId);
   restoreImplicitResumeRequest?.();
 
-  const acquired = acquireAccount(accountPool, req.codexRequest.model, undefined, tag);
+  const acquired = acquireAccount(accountPool, req.codexRequest.model, tag);
   if (!acquired) {
     return {
       action: "respond",
@@ -305,7 +302,6 @@ export async function retryNonStreamingEmptyResponse(
     acquired.accountId,
     cookieJar,
     acquired.entryId,
-    proxyPool,
     acquired.codexFingerprintMode ?? "off",
   );
   setActiveAccount?.(acquired.entryId, nextApi);
@@ -331,7 +327,6 @@ export async function retryNonStreamingEmptyResponse(
       status: rawResponse.status,
       startMs: retryStartMs,
       account: displayName(acquired.entryId),
-      fallback: true,
     });
     return {
       action: "retry",
@@ -349,7 +344,6 @@ export async function retryNonStreamingEmptyResponse(
       error: msg,
       startMs: retryStartMs,
       account: displayName(acquired.entryId),
-      fallback: true,
     });
     if (retryErr instanceof CodexApiError) {
       const code = toErrorStatus(retryErr.status);
@@ -378,9 +372,6 @@ export interface HandleNonStreamingPrematureCloseOptions {
   requestId: string;
   released: Set<string>;
   variantHash?: string;
-  /** True when this request is being served by a fallback account
-   *  (entryId !== the initial entryId acquired for the request). */
-  fallback?: boolean;
   logWarn?: (message: string) => void;
 }
 
@@ -396,7 +387,6 @@ export function handleNonStreamingPrematureClose(
     requestId,
     released,
     variantHash,
-    fallback = false,
     logWarn = (message) => console.warn(message),
   } = options;
 
@@ -415,7 +405,6 @@ export function handleNonStreamingPrematureClose(
     eventCount: err.eventCount,
     hadReasoning: err.hadReasoning,
     detail: err.message,
-    fallback,
   });
   releaseAccount(accountPool, entryId, annotateImageGenOutcome(undefined, req.expectsImageGen), released);
 

@@ -8,7 +8,6 @@
 import { Hono, type Context } from "hono";
 import type { AccountPool } from "../auth/account-pool.js";
 import type { CookieJar } from "../proxy/cookie-jar.js";
-import type { ProxyPool } from "../proxy/proxy-pool.js";
 import type { CodexResponsesRequest } from "../proxy/codex-api.js";
 import { sanitizeCodexInputItems } from "../proxy/reasoning-input-sanitizer.js";
 import { enqueueLogEntry } from "../logs/entry.js";
@@ -92,7 +91,6 @@ function parseBody(c: Context, body: unknown): Record<string, unknown> | Respons
 export function createResponsesRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
-  proxyPool?: ProxyPool,
 ): Hono {
   const app = new Hono();
   // Register errorHandler locally so that when testing this router in isolation (e.g. unit tests),
@@ -272,7 +270,7 @@ export function createResponsesRoutes(
       }),
     });
 
-    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: PASSTHROUGH_FORMAT, proxyPool });
+    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: PASSTHROUGH_FORMAT });
   };
 
   const compactHandler = async (c: Context) => {
@@ -300,7 +298,7 @@ export function createResponsesRoutes(
       }),
     });
 
-    return handleCompact(c, accountPool, cookieJar, proxyPool, body);
+    return handleCompact(c, accountPool, cookieJar, body);
   };
 
   app.post("/v1/responses", apiKeyAuth(accountPool), responsesHandler);

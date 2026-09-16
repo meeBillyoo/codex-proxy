@@ -32,10 +32,6 @@ export interface StreamDiagnostics {
   accountEntryId?: string;
   variantHash?: string;
   abortSignal?: AbortSignal;
-  /** True when this stream runs on a fallback account (not the first acquired).
-   *  Propagated to premature-close / client-disconnect audit rows for
-   *  consistency with the main egress line. */
-  fallback?: boolean;
 }
 
 export interface StreamResponseOptions {
@@ -117,7 +113,7 @@ export async function streamResponse(options: StreamResponseOptions): Promise<vo
   // Diagnostic context passed into adapter-internal premature-close records
   // (e.g. streamPassthrough in responses.ts). The adapter is free to ignore
   // it; carrying it through here means audit entries land on the real
-  // requestId/account/variantHash instead of the synthetic fallback.
+  // requestId/account/variantHash instead of synthetic values.
   const streamContext = {
     requestId: diagnostics?.requestId,
     tag: diagnostics?.tag ?? adapter.tag,
@@ -126,7 +122,6 @@ export async function streamResponse(options: StreamResponseOptions): Promise<vo
     model,
     accountEntryId: diagnostics?.accountEntryId,
     variantHash: diagnostics?.variantHash,
-    fallback: diagnostics?.fallback,
     ...(diagnostics?.abortSignal ? { abortSignal: diagnostics.abortSignal } : {}),
   };
   let sawFirstToken = false;
@@ -182,7 +177,6 @@ export async function streamResponse(options: StreamResponseOptions): Promise<vo
           model,
           accountEntryId: diagnostics?.accountEntryId ?? null,
           variantHash: diagnostics?.variantHash ?? null,
-          fallback: diagnostics?.fallback,
           writtenChunks: written.chunks,
           writtenBytes: written.bytes,
           lastSentEvent: written.lastEvent,
@@ -242,7 +236,6 @@ export async function streamResponse(options: StreamResponseOptions): Promise<vo
       model,
       accountEntryId: diagnostics?.accountEntryId ?? null,
       variantHash: diagnostics?.variantHash ?? null,
-      fallback: diagnostics?.fallback,
       writtenChunks: written.chunks,
       writtenBytes: written.bytes,
       lastSentEvent: written.lastEvent,

@@ -1,7 +1,6 @@
 import { CodexApi } from "../../proxy/codex-api.js";
 import type { CookieJar } from "../../proxy/cookie-jar.js";
 import type { CodexFingerprintMode } from "../../auth/types.js";
-import type { ProxyPool } from "../../proxy/proxy-pool.js";
 import type { UsageInfo } from "../../translation/codex-event-extractor.js";
 import { calculateUsageCostUsd, loadPricingCatalog, resolveModelPricing } from "../../auth/usage-pricing.js";
 
@@ -68,16 +67,14 @@ export function buildCodexApi(
   accountId: string | null,
   cookieJar: CookieJar | undefined,
   entryId: string,
-  proxyPool?: ProxyPool,
   codexFingerprintMode: CodexFingerprintMode = "off",
 ): CodexApi {
-  const proxyUrl = proxyPool?.resolveProxyUrl(entryId);
   return new CodexApi(
     token,
     accountId,
     cookieJar,
     entryId,
-    proxyUrl,
+    undefined,
     undefined,
     undefined,
     { codexFingerprintMode },

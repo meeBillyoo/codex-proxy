@@ -60,7 +60,7 @@ describe("handleNonStreamingEmptyResponseExhausted", () => {
 
     expect(result).toEqual({
       status: 502,
-      message: "Codex returned empty responses across all available accounts",
+      message: "Codex returned empty responses after retrying the current CLI account",
     });
     expect(accountPool.release).toHaveBeenCalledWith("entry-1", undefined);
     expect(released.has("entry-1")).toBe(true);

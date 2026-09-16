@@ -17,7 +17,7 @@ const STATUS_BG: Record<DiagnosticStatus, string> = {
 
 const CHECK_NAME_KEYS: Record<string, string> = {
   server: "checkServer",
-  accounts: "checkAccounts",
+  account: "checkAccounts",
   transport: "checkTransport",
   upstream: "checkUpstream",
 };

@@ -39,7 +39,7 @@ export function getConfigDir(): string {
   return _paths?.configDir ?? resolve(process.cwd(), "config");
 }
 
-/** Directory for runtime data (accounts.json, cookies.json, etc.). */
+/** Directory for runtime data (usage state, cookies, logs, etc.). */
 export function getDataDir(): string {
   return _paths?.dataDir ?? process.env.CODEX_PROXY_DATA_DIR ?? resolve(process.cwd(), "data");
 }

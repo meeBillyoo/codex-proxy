@@ -10,7 +10,7 @@
  * The socket itself is only a transport: nothing runs until the client sends a
  * `response.create` JSON frame. Each frame is dispatched through the EXACT same
  * POST `/v1/responses` handler (via `app.request()`), which re-runs the shared
- * account-pool rotation / upstream routing / SSE streaming path. The resulting SSE
+ * account lifecycle / upstream routing / SSE streaming path. The resulting SSE
  * events are then forwarded back to the client as WebSocket text frames — each frame
  * carries the `data:` JSON payload of one event, mirroring what the Codex backend
  * emits over its own WebSocket. The socket stays open for the next `response.create`

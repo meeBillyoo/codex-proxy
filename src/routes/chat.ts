@@ -3,7 +3,6 @@ import type { Context } from "hono";
 import { ChatCompletionRequestSchema } from "../types/openai.js";
 import type { AccountPool } from "../auth/account-pool.js";
 import type { CookieJar } from "../proxy/cookie-jar.js";
-import type { ProxyPool } from "../proxy/proxy-pool.js";
 import { translateToCodexRequest } from "../translation/openai-to-codex.js";
 import { isRecord } from "../translation/shared-utils.js";
 import {
@@ -37,7 +36,7 @@ function makeOpenAIFormat(
     formatNoAccount: () => ({
       error: {
         message:
-          "No available accounts. All accounts are expired or rate-limited.",
+          "The Codex CLI account is unavailable, expired, or rate-limited.",
         type: "server_error",
         param: null,
         code: "no_available_accounts",
@@ -94,7 +93,6 @@ function formatModelNotFound(model: string) {
 export function createChatRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
-  proxyPool?: ProxyPool,
 ): Hono {
   const app = new Hono();
 
@@ -167,12 +165,7 @@ export function createChatRoutes(
       });
     }
 
-    const summary = accountPool.getPoolSummary();
-    if (summary.active === 0) {
-      return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt, proxyPool });
-    }
-
-    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt, proxyPool });
+    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt });
   });
 
   return app;

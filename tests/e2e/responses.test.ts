@@ -31,7 +31,6 @@ import { createModelRoutes } from "@src/routes/models.js";
 import { createWebRoutes } from "@src/routes/web.js";
 import { AccountPool } from "@src/auth/account-pool.js";
 import { CookieJar } from "@src/proxy/cookie-jar.js";
-import { ProxyPool } from "@src/proxy/proxy-pool.js";
 import { loadStaticModels } from "@src/models/model-store.js";
 
 // ── Per-test app lifecycle ───────────────────────────────────────────
@@ -40,7 +39,6 @@ interface TestContext {
   app: Hono;
   accountPool: AccountPool;
   cookieJar: CookieJar;
-  proxyPool: ProxyPool;
 }
 
 let ctx: TestContext;
@@ -50,18 +48,17 @@ function buildApp(opts?: { noAccount?: boolean }): TestContext {
 
   const accountPool = new AccountPool();
   const cookieJar = new CookieJar();
-  const proxyPool = new ProxyPool();
 
   if (opts?.noAccount) vi.spyOn(accountPool, "isAuthenticated").mockReturnValue(false);
 
   const app = new Hono();
   app.use("*", requestId);
   app.onError(errorHandler);
-  app.route("/", createResponsesRoutes(accountPool, cookieJar, proxyPool));
+  app.route("/", createResponsesRoutes(accountPool, cookieJar));
   app.route("/", createModelRoutes());
   app.route("/", createWebRoutes(accountPool));
 
-  return { app, accountPool, cookieJar, proxyPool };
+  return { app, accountPool, cookieJar };
 }
 
 beforeEach(() => {
@@ -76,7 +73,6 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx.cookieJar.destroy();
-  ctx.proxyPool.destroy();
   ctx.accountPool.destroy();
 });
 
@@ -227,7 +223,6 @@ describe("E2E: POST /v1/responses", () => {
       expect(body.error.code).toBe("invalid_api_key");
     } finally {
       noAuth.cookieJar.destroy();
-      noAuth.proxyPool.destroy();
       noAuth.accountPool.destroy();
     }
   });

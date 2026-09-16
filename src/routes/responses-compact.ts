@@ -7,7 +7,6 @@ import type { StatusCode } from "hono/utils/http-status";
 import type { AccountPool } from "../auth/account-pool.js";
 import { clearCfChallengeCooldown } from "../auth/cf-challenge-cooldown.js";
 import type { CookieJar } from "../proxy/cookie-jar.js";
-import type { ProxyPool } from "../proxy/proxy-pool.js";
 import { CodexApi, CodexApiError } from "../proxy/codex-api.js";
 import type { CodexCompactRequest } from "../proxy/codex-api.js";
 import { sanitizeCodexInputItems } from "../proxy/reasoning-input-sanitizer.js";
@@ -38,10 +37,8 @@ function buildCodexApi(
   accountId: string | null,
   cookieJar: CookieJar | undefined,
   entryId: string,
-  proxyPool?: ProxyPool,
 ): CodexApi {
-  const proxyUrl = proxyPool?.resolveProxyUrl(entryId);
-  return new CodexApi(token, accountId, cookieJar, entryId, proxyUrl);
+  return new CodexApi(token, accountId, cookieJar, entryId);
 }
 
 // ── Compact handler ───────────────────────────────────────────────
@@ -50,7 +47,6 @@ export async function handleCompact(
   c: Context,
   accountPool: AccountPool,
   cookieJar: CookieJar | undefined,
-  proxyPool: ProxyPool | undefined,
   body: Record<string, unknown>,
 ): Promise<Response> {
   const rawModel = typeof body.model === "string" ? body.model : "codex";
@@ -108,18 +104,16 @@ export async function handleCompact(
   }
 
   const TAG = "Compact";
-  const triedEntryIds: string[] = [];
   const released = new Set<string>();
 
-  const acquired = acquireAccount(accountPool, modelId, undefined, TAG);
+  const acquired = acquireAccount(accountPool, modelId, TAG);
   if (!acquired) {
     c.status(503);
-    return c.json(formatResponsesError(503, "No available accounts. All accounts are expired or rate-limited."));
+    return c.json(formatResponsesError(503, "The Codex CLI account is unavailable, expired, or rate-limited."));
   }
 
-  let entryId = acquired.entryId;
-  triedEntryIds.push(entryId);
-  let codexApi = buildCodexApi(acquired.token, acquired.accountId, cookieJar, entryId, proxyPool);
+  const entryId = acquired.entryId;
+  const codexApi = buildCodexApi(acquired.token, acquired.accountId, cookieJar, entryId);
 
   console.log(
     `[${TAG}] Account ${entryId} | model=${modelId} | input_items=${compactRequest.input.length}`,
@@ -127,64 +121,35 @@ export async function handleCompact(
 
   await staggerIfNeeded(acquired.prevSlotMs);
 
-  const MAX_COMPACT_RETRIES = 8;
-  for (let attempt = 0; attempt < MAX_COMPACT_RETRIES; attempt++) {
-    try {
-      const result = await withRetry(
-        () => codexApi.createCompactResponse(compactRequest, c.req.raw.signal),
-        { tag: TAG },
-      );
+  try {
+    const result = await withRetry(
+      () => codexApi.createCompactResponse(compactRequest, c.req.raw.signal),
+      { tag: TAG },
+    );
 
-      clearCfChallengeCooldown(entryId);
+    clearCfChallengeCooldown(entryId);
+    releaseAccount(accountPool, entryId, annotateUsageCost(modelId, compactImageFailedUsage), released);
+    return c.json(result);
+  } catch (err) {
+    if (!(err instanceof CodexApiError)) {
       releaseAccount(accountPool, entryId, annotateUsageCost(modelId, compactImageFailedUsage), released);
-      return c.json(result);
-    } catch (err) {
-      if (!(err instanceof CodexApiError)) {
-        releaseAccount(accountPool, entryId, annotateUsageCost(modelId, compactImageFailedUsage), released);
-        throw err;
-      }
-
-      const decision = handleCodexApiError(
-        err, accountPool, entryId, modelId, TAG, false,
-      );
-
-      if (decision.action === "respond") {
-        releaseAccount(accountPool, entryId, annotateUsageCost(modelId, compactImageFailedUsage), released);
-        c.status(decision.status as StatusCode);
-        return c.json(formatResponsesError(decision.status, decision.message));
-      }
-
-      if (decision.releaseBeforeRetry) {
-        releaseAccount(accountPool, entryId, annotateUsageCost(modelId, compactImageFailedUsage), released);
-      }
-
-      const retry = acquireAccount(accountPool, modelId, triedEntryIds, TAG);
-      if (!retry) {
-        const status = decision.status as StatusCode;
-        c.status(status);
-        if (decision.useFormat429) {
-          return c.json({
-            type: "error",
-            error: {
-              type: "rate_limit_error",
-              code: "rate_limit_exceeded",
-              message: decision.message,
-            },
-          });
-        }
-        return c.json(formatResponsesError(status, decision.message));
-      }
-
-      entryId = retry.entryId;
-      triedEntryIds.push(entryId);
-      codexApi = buildCodexApi(retry.token, retry.accountId, cookieJar, entryId, proxyPool);
-      console.log(`[${TAG}] Fallback → account ${retry.entryId}`);
-      await staggerIfNeeded(retry.prevSlotMs);
-      continue;
+      throw err;
     }
-  }
 
-  releaseAccount(accountPool, entryId, annotateUsageCost(modelId, compactImageFailedUsage), released);
-  c.status(502);
-  return c.json(formatResponsesError(502, "Compact failed after maximum retry attempts"));
+    const decision = handleCodexApiError(err, accountPool, entryId, modelId, TAG);
+    releaseAccount(accountPool, entryId, annotateUsageCost(modelId, compactImageFailedUsage), released);
+    const status = decision.status as StatusCode;
+    c.status(status);
+    if (decision.useFormat429) {
+      return c.json({
+        type: "error",
+        error: {
+          type: "rate_limit_error",
+          code: "rate_limit_exceeded",
+          message: decision.message,
+        },
+      });
+    }
+    return c.json(formatResponsesError(status, decision.message));
+  }
 }

@@ -33,32 +33,22 @@ export function toErrorStatus(status: number): StatusCode {
   return (status >= 400 && status < 600 ? status : 502) as StatusCode;
 }
 
-export type ErrorAction =
-  | { action: "respond"; status: number; message: string }
-  | {
-      action: "retry";
-      releaseBeforeRetry?: boolean;
-      markModelRetried?: boolean;
-      markEarlyServerErrorRetried?: boolean;
-      /** Fallback status/message when no retry account is available. */
-      status: number;
-      message: string;
-      /** Use format429 instead of formatError for the fallback response. */
-      useFormat429?: boolean;
-    };
+export interface ErrorAction {
+  status: number;
+  message: string;
+  useFormat429?: boolean;
+}
 
 /**
  * Classify a CodexApiError and mutate pool state accordingly.
  *
- * Returns an ErrorAction instructing the proxy-handler orchestrator on
- * what to do next.
+ * Returns the client-facing error after updating the current account state.
  *
  * @param err           The CodexApiError from upstream
  * @param pool          AccountPool for status mutations
  * @param entryId       Current account entry ID
  * @param model         Requested model name
  * @param tag           Route tag for logging
- * @param modelRetried  Whether model-not-supported retry has already been attempted
  */
 export function handleCodexApiError(
   err: CodexApiError,
@@ -66,26 +56,15 @@ export function handleCodexApiError(
   entryId: string,
   model: string,
   tag: string,
-  modelRetried: boolean,
   cookieJar?: CookieJar,
-  earlyServerErrorRetried = false,
 ): ErrorAction {
   const email = pool.getEntry(entryId)?.email ?? "?";
 
   // 1. Model not supported on this account's plan
   if (isModelNotSupportedError(err)) {
-    if (!modelRetried) {
-      console.warn(
-        `[${tag}] Account ${entryId} (${email}) | Model "${model}" not supported`,
-      );
-      const fallbackStatus = toErrorStatus(err.status);
-      return {
-        action: "retry", releaseBeforeRetry: true, markModelRetried: true,
-        status: fallbackStatus, message: err.message,
-      };
-    }
+    console.warn(`[${tag}] Account ${entryId} (${email}) | Model "${model}" not supported`);
     const status = toErrorStatus(err.status);
-    return { action: "respond", status, message: err.message };
+    return { status, message: err.message };
   }
 
   console.error(`[${tag}] Account ${entryId} | Codex API error:`, err.message);
@@ -94,17 +73,8 @@ export function handleCodexApiError(
   // failure. It may be retried once on a fresh connection; never classify it
   // as quota, rate-limit, ban, or overload.
   if (isEarlyServerError(err)) {
-    if (!earlyServerErrorRetried) {
-      console.warn(`[${tag}] Account ${entryId} (${email}) | 500 early server error`);
-      return {
-        action: "retry",
-        releaseBeforeRetry: true,
-        markEarlyServerErrorRetried: true,
-        status: 500,
-        message: err.message,
-      };
-    }
-    return { action: "respond", status: 500, message: err.message };
+    console.warn(`[${tag}] Account ${entryId} (${email}) | 500 early server error`);
+    return { status: 500, message: err.message };
   }
 
   // 2. Rate-limited — write into cachedQuota.rate_limit (single source of
@@ -124,7 +94,7 @@ export function handleCodexApiError(
         (limitId ? ` [${limitId}]` : "") +
         (backoffDisplay != null ? ` (resets in ${backoffDisplay}s)` : ""),
     );
-    return { action: "retry", status: 429, message: err.message, useFormat429: true };
+    return { status: 429, message: err.message, useFormat429: true };
   }
 
   // 3. Quota exhausted (402 Payment Required)
@@ -133,7 +103,7 @@ export function handleCodexApiError(
     console.warn(
       `[${tag}] Account ${entryId} (${email}) | 402 quota exhausted`,
     );
-    return { action: "retry", status: 402, message: err.message };
+    return { status: 402, message: err.message };
   }
 
   // 503 server capacity — transient upstream condition. Do not mutate account
@@ -142,12 +112,7 @@ export function handleCodexApiError(
     console.warn(
       `[${tag}] Account ${entryId} (${email}) | 503 server overloaded`,
     );
-    return {
-      action: "retry",
-      releaseBeforeRetry: true,
-      status: 503,
-      message: err.message,
-    };
+    return { status: 503, message: err.message };
   }
 
   // 4. Cloudflare challenge (403 HTML/challenge response) — cooldown, not ban.
@@ -157,12 +122,7 @@ export function handleCodexApiError(
       `[${tag}] Account ${entryId} (${email}) | Cloudflare challenge 403, ` +
         `cooling down for ${cooldown.delaySeconds}s`,
     );
-    return {
-      action: "retry",
-      releaseBeforeRetry: true,
-      status: 502,
-      message: "Upstream blocked the request (Cloudflare challenge)",
-    };
+    return { status: 502, message: "Upstream blocked the request (Cloudflare challenge)" };
   }
 
   // 5. Ban (non-Cloudflare 403)
@@ -171,7 +131,7 @@ export function handleCodexApiError(
     console.warn(
       `[${tag}] Account ${entryId} (${email}) | 403 banned`,
     );
-    return { action: "retry", status: 403, message: err.message };
+    return { status: 403, message: err.message };
   }
 
   // 6. Token invalidated / account deactivated
@@ -182,7 +142,7 @@ export function handleCodexApiError(
     console.warn(
       `[${tag}] Account ${entryId} (${email}) | 401 ${isDeactivated ? "deactivated (banned)" : "token invalidated"}`,
     );
-    return { action: "retry", status: 401, message: err.message };
+    return { status: 401, message: err.message };
   }
 
   // 7. Cloudflare path block (empty-body 404). CF's Bot Management can
@@ -214,17 +174,12 @@ export function handleCodexApiError(
         `[${tag}] Account ${entryId} (${email}) | Cloudflare path-block 404 ×${blockCount}, cleared cookies and retrying...`,
       );
     }
-    return {
-      action: "retry",
-      releaseBeforeRetry: true,
-      status: 502,
-      message: "Upstream blocked the request (Cloudflare path-block)",
-    };
+    return { status: 502, message: "Upstream blocked the request (Cloudflare path-block)" };
   }
 
   // 8. Generic error — let the route formatter produce the client protocol
   // envelope. Raw upstream bodies are reserved for terminal early
   // `server_error`, where preserving the exact backend payload is useful.
   const status = toErrorStatus(err.status);
-  return { action: "respond", status, message: err.message };
+  return { status, message: err.message };
 }

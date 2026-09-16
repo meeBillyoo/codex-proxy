@@ -19,7 +19,7 @@ vi.mock("../../../src/fingerprint/manager.js", () => ({
 
 function setup(active = true) {
   const pool = {
-    getPoolSummary: () => ({ active: active ? 1 : 0, total: 1 }),
+    getAccount: () => active ? { status: "active", email: "test@example.com", planType: "team" } : null,
     acquire: vi.fn(() => ({ token: "test-token", accountId: "account", entryId: "entry" })),
     releaseWithoutCounting: vi.fn(),
   };

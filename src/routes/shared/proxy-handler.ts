@@ -6,8 +6,6 @@
  *   - account-acquisition.ts  — acquire / release with idempotent guard
  *   - proxy-egress-log.ts     — upstream request audit log entries
  *   - proxy-error-handler.ts  — CodexApiError classification + pool state mutations
- *   - proxy-error-retry-transition.ts — CodexApiError retry/release/fallback transition
- *   - proxy-fallback-account-retry.ts — fallback account acquire / API rebuild
  *   - proxy-implicit-resume-lifecycle.ts — implicit-resume state machine / rollback
  *   - proxy-implicit-resume-request.ts — implicit-resume request apply/restore state
  *   - proxy-request-preparation.ts — request input/default forwarding fields
@@ -40,7 +38,6 @@ import {
   respondWithNoAccount,
   respondWithProxyError,
 } from "./proxy-error-response.js";
-import { applyProxyErrorRetryTransition } from "./proxy-error-retry-transition.js";
 import { createImplicitResumeLifecycle } from "./proxy-implicit-resume-lifecycle.js";
 import { captureImplicitResumeRequestState } from "./proxy-implicit-resume-request.js";
 import {
@@ -50,7 +47,6 @@ import {
 import { logRequestDiagnostics } from "./proxy-request-diagnostics.js";
 import {
   applyProxyRetryRecoveryDecision,
-  applyCascadingBanDefense,
   buildProxyRetryRecoveryDecision,
   invalidateRejectedPreviousResponse,
 } from "./proxy-retry-recovery.js";
@@ -65,7 +61,7 @@ import {
 } from "../../proxy/reasoning-replay-cache.js";
 
 export async function handleProxyRequest(options: HandleProxyRequestOptions): Promise<Response> {
-  const { c, accountPool, cookieJar, req, fmt, proxyPool } = options;
+  const { c, accountPool, cookieJar, req, fmt } = options;
   c.set("logForwarded", true);
 
   const affinityMap = getSessionAffinityMap();
@@ -85,69 +81,34 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
   });
 
   const released = new Set<string>();
-  const verifiedExcludeIds: string[] = [];
 
-  // Single acquire call — preferredEntryId is a hint, not a hard requirement
-  let acquired = acquireAccount(accountPool, req.codexRequest.model, undefined, fmt.tag, sessionContext.preferredEntryId ?? undefined);
+  const acquired = acquireAccount(accountPool, req.codexRequest.model, fmt.tag);
   if (!acquired) {
     return respondWithNoAccount({ c, req, fmt });
   }
 
-  // ── Drift-Defense & Verification Loop ──
-  // Caps the number of upstream /usage checks per request to avoid amplification
-  // when many accounts are simultaneously dirty.
-  const MAX_VERIFY_ATTEMPTS = 5;
-  let verifyAttempts = 0;
-  for (;;) {
-    if (!acquired) return respondWithNoAccount({ c, req, fmt });
-    const entry = accountPool.getEntry(acquired.entryId);
-    if (entry?.quotaVerifyRequired) {
-      const verifyingEntryId = acquired.entryId;
-      console.log(`[${fmt.tag}] 🔍 Account ${verifyingEntryId} (${entry.email ?? "?"}) requires quota verification due to local reset. Syncing with upstream...`);
-      try {
-        const usage = await new CodexApi(
-          acquired.token,
-          acquired.accountId,
-          cookieJar,
-          acquired.entryId,
-          proxyPool?.resolveProxyUrl(acquired.entryId),
-        ).getUsage();
-        
-        const quota = toQuota(usage);
-        accountPool.updateCachedQuota(acquired.entryId, quota);
-
-        if (quota.rate_limit.limit_reached) {
-          console.warn(`[${fmt.tag}] 🚫 Upstream reports account ${acquired.entryId} is still limit_reached. Releasing and retrying another...`);
-          releaseAccount(accountPool, acquired.entryId, undefined, released);
-          verifiedExcludeIds.push(acquired.entryId);
-
-          verifyAttempts++;
-          if (verifyAttempts >= MAX_VERIFY_ATTEMPTS) {
-            console.warn(`[${fmt.tag}] ⚠️ Drift-defense hit MAX_VERIFY_ATTEMPTS (${MAX_VERIFY_ATTEMPTS}). Giving up to avoid excess upstream calls.`);
-            return respondWithNoAccount({ c, req, fmt });
-          }
-
-          acquired = acquireAccount(accountPool, req.codexRequest.model, verifiedExcludeIds, fmt.tag, sessionContext.preferredEntryId ?? undefined);
-          if (!acquired) {
-            return respondWithNoAccount({ c, req, fmt });
-          }
-          continue; // Loop back to check the newly acquired account
-        }
-      } catch (err) {
-        console.warn(`[${fmt.tag}] ⚠️ Failed to verify dirty quota for ${verifyingEntryId}:`, err);
-        // Keep quotaVerifyRequired=true so the flag isn't silently cleared on transient network errors.
-        // The ActiveQuotaRefresher or the next request will retry. This avoids promoting a still-limited
-        // account to "clean" just because the upstream check temporarily failed.
+  const entry = accountPool.getEntry(acquired.entryId);
+  if (entry?.quotaVerifyRequired) {
+    console.log(`[${fmt.tag}] Verifying cached quota for the current CLI account`);
+    try {
+      const usage = await new CodexApi(
+        acquired.token,
+        acquired.accountId,
+        cookieJar,
+        acquired.entryId,
+      ).getUsage();
+      const quota = toQuota(usage);
+      accountPool.updateCachedQuota(acquired.entryId, quota);
+      if (quota.rate_limit.limit_reached) {
+        releaseAccount(accountPool, acquired.entryId, undefined, released);
+        return respondWithNoAccount({ c, req, fmt });
       }
+    } catch (err) {
+      console.warn(`[${fmt.tag}] Failed to verify current CLI account quota:`, err);
     }
-    break; // Verified or no verification required, proceed!
   }
 
-  if (!acquired) return respondWithNoAccount({ c, req, fmt });
   let { entryId } = acquired;
-  // First account this request acquired; later attempts that switch to another
-  // entry (fallback account retry) are marked as fallback in the audit log.
-  const initialEntryId = entryId;
 
   const accountDisplayName = (id: string): string | null => {
     const entry = accountPool.getEntry(id);
@@ -156,32 +117,13 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
     return id.slice(0, 8);
   };
 
-  // ── Session Affinity Fallback Defense (Cascading Ban Prevention) ──
-  // Only strip session identifiers when the preferred account is banned/disabled.
-  // Quota exhaustion is normal rotation — no ban propagation risk.
-  if (sessionContext.preferredEntryId && sessionContext.preferredEntryId !== entryId) {
-    const preferredEntry = accountPool.getEntry(sessionContext.preferredEntryId);
-    applyCascadingBanDefense({
-      request: req,
-      affinityMap,
-      preferredEntryId: sessionContext.preferredEntryId,
-      acquiredEntryId: entryId,
-      preferredStatus: preferredEntry?.status,
-      explicitPrevRespId: sessionContext.explicitPrevRespId,
-      tag: fmt.tag,
-    });
-  }
   let codexApi = buildCodexApi(
     acquired.token,
     acquired.accountId,
     cookieJar,
     entryId,
-    proxyPool,
     acquired.codexFingerprintMode ?? "off",
   );
-  const triedEntryIds: string[] = [entryId];
-  let modelRetried = false;
-  let earlyServerErrorRetried = false;
   let stripAndRetryDone = false;
   const reasoningReplayCache = getReasoningReplayCache();
   const reasoningReplayItems = sessionContext.implicitPrevRespId
@@ -279,7 +221,6 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
         request: req,
         entryId,
         account: accountDisplayName(entryId),
-        fallback: entryId !== initialEntryId,
         abortSignal: abortController.signal,
         buildPoolCtx,
         requestId,
@@ -309,7 +250,6 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
           variantHash: sessionContext.variantHash,
           chainAdvanceTicket,
           implicitResumeActive: implicitResume.isActive(),
-          fallback: entryId !== initialEntryId,
         });
       }
 
@@ -320,10 +260,9 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
         cookieJar,
         req,
         fmt,
-        proxyPool,
         initialApi: codexApi,
         initialResponse: rawResponse,
-        initialEntryId: entryId,
+        entryId,
         abortController,
         released,
         requestId,
@@ -336,7 +275,6 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
         setActiveAccount: (nextEntryId, nextApi) => {
           entryId = nextEntryId;
           codexApi = nextApi;
-          if (!triedEntryIds.includes(nextEntryId)) triedEntryIds.push(nextEntryId);
         },
         variantHash: sessionContext.variantHash,
         chainAdvanceTicket,
@@ -359,7 +297,6 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
         err,
         {
           stripAndRetryDone,
-          modelRetried,
           implicitResumeActive: implicitResume.isActive(),
           previousResponseId: req.codexRequest.previous_response_id,
           explicitPreviousResponseId: Boolean(sessionContext.explicitPrevRespId),
@@ -393,8 +330,8 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
             );
           }
 
-          // A unique pooled key avoids both the busy canonical connection and
-          // one-shot fallback while establishing a new response owner.
+          // A unique pooled key avoids the busy canonical connection while
+          // establishing a new response owner.
           recoveryWsKeySuffix =
             `recovery-${requestId.slice(0, 8)}-${++continuityRecoveryCount}`;
           continue;
@@ -427,38 +364,20 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
 
         case "error_handler_decides": {
           const decision = handleCodexApiError(
-            err as CodexApiError, accountPool, entryId, req.codexRequest.model, fmt.tag, modelRetried, cookieJar,
-            earlyServerErrorRetried,
+            err as CodexApiError, accountPool, entryId, req.codexRequest.model, fmt.tag, cookieJar,
           );
-
-          const errorRetryTransition = applyProxyErrorRetryTransition({
-            accountPool, entryId,
-            model: req.codexRequest.model,
-            triedEntryIds, tag: fmt.tag,
-            decision, released,
-            restoreImplicitResumeRequest: implicitResume.restore,
-            modelRetried,
-            expectsImageGen: req.expectsImageGen,
-            cookieJar, proxyPool,
+          releaseAccount(
+            accountPool,
+            entryId,
+            annotateImageGenOutcome(undefined, req.expectsImageGen),
+            released,
+          );
+          return respondWithProxyError({
+            c, req, fmt,
+            status: decision.status,
+            message: decision.message,
+            ...(decision.useFormat429 ? { useFormat429: true } : {}),
           });
-          if (errorRetryTransition.action === "respond") {
-            return respondWithProxyError({
-              c, req, fmt,
-              status: errorRetryTransition.status,
-              message: errorRetryTransition.message,
-              ...(errorRetryTransition.useFormat429 ? { useFormat429: true } : {}),
-            });
-          }
-
-          modelRetried = errorRetryTransition.modelRetried;
-          if (decision.action === "retry" && decision.markEarlyServerErrorRetried) {
-            earlyServerErrorRetried = true;
-          }
-          entryId = errorRetryTransition.entryId;
-          triedEntryIds.push(errorRetryTransition.entryId);
-          codexApi = errorRetryTransition.api;
-          await staggerIfNeeded(errorRetryTransition.prevSlotMs);
-          continue;
         }
       }
     }

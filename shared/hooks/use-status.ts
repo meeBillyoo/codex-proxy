@@ -53,7 +53,7 @@ export function selectDefaultModel(catalog: CatalogModel[], ids: string[]): stri
   return selectable.find((m) => m.isDefault)?.id ?? selectable[0]?.id ?? ids[0] ?? "";
 }
 
-export function useStatus(accountCount: number) {
+export function useStatus() {
   const [baseUrl, setBaseUrl] = useState("Loading...");
   const [apiKey] = useState("PROXY_API_KEY");
   const [models, setModels] = useState<string[]>([]);
@@ -123,7 +123,7 @@ export function useStatus(accountCount: number) {
       if (intervalId) clearInterval(intervalId);
       clearInterval(uptimeIntervalId);
     };
-  }, [fetchModels, accountCount]);
+  }, [fetchModels]);
 
   // Build model families — group catalog by family, excluding tier variants
   const modelFamilies = useMemo((): ModelFamily[] => {

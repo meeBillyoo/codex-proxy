@@ -4,7 +4,6 @@ import { CodexApiError } from "../../proxy/codex-api.js";
 import type { CodexApi, WsPoolContext } from "../../proxy/codex-api.js";
 import type { AccountPool } from "../../auth/account-pool.js";
 import type { CookieJar } from "../../proxy/cookie-jar.js";
-import type { ProxyPool } from "../../proxy/proxy-pool.js";
 import { EmptyResponseError, UpstreamPrematureCloseError } from "../../translation/codex-event-extractor.js";
 import type { ChainAdvanceTicket, SessionAffinityMap } from "../../auth/session-affinity.js";
 import type { FormatAdapter, ProxyRequest, UsageHint } from "./proxy-handler-types.js";
@@ -37,10 +36,9 @@ export interface HandleNonStreamingOptions {
   cookieJar?: CookieJar;
   req: ProxyRequest;
   fmt: FormatAdapter;
-  proxyPool?: ProxyPool;
   initialApi: CodexApi;
   initialResponse: Response;
-  initialEntryId: string;
+  entryId: string;
   abortController: AbortController;
   released: Set<string>;
   requestId: string;
@@ -62,10 +60,9 @@ export async function handleNonStreaming(options: HandleNonStreamingOptions): Pr
     cookieJar,
     req,
     fmt,
-    proxyPool,
     initialApi,
     initialResponse,
-    initialEntryId,
+    entryId,
     abortController,
     released,
     requestId,
@@ -79,7 +76,7 @@ export async function handleNonStreaming(options: HandleNonStreamingOptions): Pr
     variantHash,
     chainAdvanceTicket,
   } = options;
-  let currentEntryId = initialEntryId;
+  let currentEntryId = entryId;
   let currentApi = initialApi;
   let currentRawResponse = initialResponse;
   const initialStartMs = Date.now();
@@ -167,8 +164,7 @@ export async function handleNonStreaming(options: HandleNonStreamingOptions): Pr
         evictReasoningReplayIdentity();
       }
       // Upstream FIN'd mid-reasoning (typically gpt-5.5 xhigh > 120 s cap).
-      // Cross-account retry would re-hit the same cap and burn the pool, so
-      // we fail fast with 504. The proxy can't recover this — the client
+      // Retrying would re-hit the same cap, so we fail fast with 504. The client
       // needs to lower reasoning effort or pick a different model.
       if (collectErr instanceof UpstreamPrematureCloseError) {
         const responsePlan = handleNonStreamingPrematureClose({
@@ -180,7 +176,6 @@ export async function handleNonStreaming(options: HandleNonStreamingOptions): Pr
           requestId,
           released,
           variantHash,
-          fallback: currentEntryId !== initialEntryId,
         });
         c.status(responsePlan.status);
         return c.json(fmt.formatError(responsePlan.status, responsePlan.message));
@@ -196,7 +191,6 @@ export async function handleNonStreaming(options: HandleNonStreamingOptions): Pr
           attempt,
           maxRetries: MAX_EMPTY_RETRIES,
           cookieJar,
-          proxyPool,
           abortSignal: abortController.signal,
           released,
           requestId,

@@ -9,7 +9,6 @@ import { AnthropicCountTokensRequestSchema, AnthropicMessagesRequestSchema } fro
 import type { AnthropicCountTokensRequest, AnthropicErrorBody, AnthropicErrorType, AnthropicMessagesRequest } from "../types/anthropic.js";
 import type { AccountPool } from "../auth/account-pool.js";
 import type { CookieJar } from "../proxy/cookie-jar.js";
-import type { ProxyPool } from "../proxy/proxy-pool.js";
 import { translateAnthropicToCodexRequest } from "../translation/anthropic-to-codex.js";
 import {
   streamCodexToAnthropic,
@@ -101,7 +100,7 @@ function makeAnthropicFormat(wantThinking: boolean): FormatAdapter {
     formatNoAccount: () =>
       makeError(
         "overloaded_error",
-        "No available accounts. All accounts are expired or rate-limited.",
+        "The Codex CLI account is unavailable, expired, or rate-limited.",
       ),
     format429: (msg) => makeError("rate_limit_error", msg),
     formatError: (_status, msg) => makeError("api_error", msg),
@@ -130,7 +129,6 @@ function makeAnthropicFormat(wantThinking: boolean): FormatAdapter {
 export function createMessagesRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
-  proxyPool?: ProxyPool,
 ): Hono {
   const app = new Hono();
 
@@ -212,7 +210,7 @@ export function createMessagesRoutes(
       }),
     });
 
-    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt, proxyPool });
+    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt });
   });
 
   return app;

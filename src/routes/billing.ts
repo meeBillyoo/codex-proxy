@@ -36,20 +36,11 @@ function isIncludedAccount(account: AccountInfo): boolean {
   return account.status === "active" || account.status === "refreshing" || account.status === "quota_exhausted";
 }
 
-function virtualBillingSnapshot(accounts: AccountInfo[]): { total: number; used: number } {
-  let total = 0;
-  let used = 0;
-
-  for (const account of accounts) {
-    if (!isIncludedAccount(account)) continue;
-
-    const planType = account.quota?.plan_type ?? account.planType;
-    const accountTotal = PLUS_VIRTUAL_LIMIT_USD * planMultiplier(planType);
-    total += accountTotal;
-    used += accountTotal * effectiveUsedPercent(account.quota) / 100;
-  }
-
-  return { total, used };
+function virtualBillingSnapshot(account: AccountInfo | null): { total: number; used: number } {
+  if (!account || !isIncludedAccount(account)) return { total: 0, used: 0 };
+  const planType = account.quota?.plan_type ?? account.planType;
+  const total = PLUS_VIRTUAL_LIMIT_USD * planMultiplier(planType);
+  return { total, used: total * effectiveUsedPercent(account.quota) / 100 };
 }
 
 /** OpenAI-compatible legacy billing routes used by gateways such as new-api. */
@@ -63,7 +54,7 @@ export function createBillingRoutes(
   app.use("/v1/dashboard/billing/usage", auth);
 
   app.get("/v1/dashboard/billing/subscription", (c) => {
-    const snapshot = virtualBillingSnapshot(accountPool.getAccounts());
+    const snapshot = virtualBillingSnapshot(accountPool.getAccount());
     return c.json({
       object: "billing_subscription",
       has_payment_method: snapshot.total > 0,
@@ -75,7 +66,7 @@ export function createBillingRoutes(
   });
 
   app.get("/v1/dashboard/billing/usage", (c) => {
-    const snapshot = virtualBillingSnapshot(accountPool.getAccounts());
+    const snapshot = virtualBillingSnapshot(accountPool.getAccount());
     return c.json({
       object: "list",
       // The legacy OpenAI endpoint reports cents. new-api divides this by 100.

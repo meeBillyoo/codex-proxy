@@ -4,9 +4,8 @@
  * Regression: when the upstream WebSocket sends a terminal error frame
  * (e.g. `usage_limit_reached`) as the first observable message,
  * `createWebSocketResponse` must reject with a `CodexApiError` so that the
- * proxy-handler's existing rotation flow can switch to a different account
- * — instead of resolving with HTTP 200 and streaming the error to the
- * client, which bypasses rotation entirely (the bug fixed in this PR).
+ * proxy-handler can update the current account state and return the proper
+ * HTTP error instead of resolving with HTTP 200 and streaming the error.
  */
 
 import { EventEmitter } from "node:events";
@@ -264,10 +263,10 @@ describe("createWebSocketResponse — early-stream error rejection", () => {
     expect(text).toContain("model_not_supported_in_plan");
   });
 
-  it("does NOT rotate on substring-only matches like soft_rate_limit_warning", async () => {
+  it("does not terminate on substring-only matches like soft_rate_limit_warning", async () => {
     // Regression: previously the classifier used `lower.includes("rate_limit")`
     // which would have classified `soft_rate_limit_warning` as a terminal 429
-    // and triggered account rotation. The exact-match allowlist must let this
+    // and triggered terminal account-state handling. The exact-match allowlist must let this
     // fall through to SSE pass-through.
     const promise = createWebSocketResponse("wss://test/ws", {}, BASE_REQUEST);
     const ws = await waitForOpen();

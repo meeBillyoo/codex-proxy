@@ -122,15 +122,12 @@ describe("retryNonStreamingEmptyResponse", () => {
     expect(restoreImplicitResumeRequest).toHaveBeenCalledOnce();
     expect(pool.acquire).toHaveBeenCalledWith({
       model: "codex-model",
-      excludeIds: undefined,
-      preferredEntryId: undefined,
     });
     expect(buildCodexApiMock).toHaveBeenCalledWith(
       "token-2",
       "account-2",
       undefined,
       "entry-2",
-      undefined,
       "session",
     );
     expect(setActiveAccount).toHaveBeenCalledWith("entry-2", api);
@@ -141,7 +138,6 @@ describe("retryNonStreamingEmptyResponse", () => {
       status: 203,
       startMs: 1_000,
       account: "old@example.test",
-      fallback: true,
     });
     expect(pool.release).toHaveBeenCalledTimes(1);
   });
@@ -214,7 +210,6 @@ describe("retryNonStreamingEmptyResponse", () => {
       error: err.message,
       startMs: 2_000,
       account: "old@example.test",
-      fallback: true,
     });
   });
 
@@ -251,7 +246,6 @@ describe("retryNonStreamingEmptyResponse", () => {
       error: "transport exploded",
       startMs: 3_000,
       account: "old@example.test",
-      fallback: true,
     });
   });
 });

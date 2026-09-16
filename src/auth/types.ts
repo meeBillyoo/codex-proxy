@@ -61,7 +61,6 @@ export interface AccountUsage {
 export interface AccountEntry {
   id: string;
   token: string;
-  refreshToken: string | null;
   email: string | null;
   accountId: string | null;
   /** OpenAI organization identity. Never send this as ChatGPT-Account-Id. */

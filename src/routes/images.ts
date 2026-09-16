@@ -8,7 +8,6 @@
 import { Hono, type Context } from "hono";
 import type { AccountPool } from "../auth/account-pool.js";
 import type { CookieJar } from "../proxy/cookie-jar.js";
-import type { ProxyPool } from "../proxy/proxy-pool.js";
 import { getConfig } from "../config.js";
 import { resolveRoutableCodexHostModel } from "../models/routable-model-resolver.js";
 import { enqueueLogEntry } from "../logs/entry.js";
@@ -53,7 +52,7 @@ function formatImagesError(status: number, message: string): unknown {
 const IMAGES_FORMAT: FormatAdapter = {
   tag: "Images",
   noAccountStatus: 503,
-  formatNoAccount: () => formatImagesError(503, "No available accounts. All accounts are expired or rate-limited."),
+  formatNoAccount: () => formatImagesError(503, "The Codex CLI account is unavailable, expired, or rate-limited."),
   format429: (message) => formatImagesError(429, message),
   formatError: (status, message) => formatImagesError(status, message),
   async *streamTranslator() {
@@ -97,7 +96,6 @@ function notAuthenticated(c: Context): Response {
 export function createImagesRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
-  proxyPool?: ProxyPool,
 ): Hono {
   const app = new Hono();
   app.onError(errorHandler);
@@ -154,7 +152,6 @@ export function createImagesRoutes(
       cookieJar,
       req: proxyReq,
       fmt: IMAGES_FORMAT,
-      proxyPool,
     });
   };
 

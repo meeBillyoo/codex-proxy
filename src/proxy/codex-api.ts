@@ -278,7 +278,7 @@ export class CodexApi {
       } catch (err) {
         // Real upstream API errors classified by ws-transport (e.g.
         // usage_limit_reached → CodexApiError(429)) must reach the
-        // proxy-handler's rotation flow on the SAME account, not retry
+        // proxy-handler's error flow on the same account, not retry
         // via HTTP — HTTP would just hit the same quota.
         if (err instanceof CodexApiError) {
           throw err;

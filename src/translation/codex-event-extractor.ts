@@ -81,9 +81,8 @@ export class EmptyResponseError extends Error {
  * output_text — the Codex backend caps total response duration and silently
  * FINs the connection.
  *
- * Treated separately from EmptyResponseError because cross-account retry is
- * useless (same workload re-hits the same cap on the next account) and just
- * burns the pool. The proxy surfaces 504 to the client instead.
+ * Treated separately from EmptyResponseError because retrying the same
+ * workload re-hits the same cap. The proxy surfaces 504 to the client.
  */
 export class UpstreamPrematureCloseError extends Error {
   constructor(

@@ -99,7 +99,6 @@ export class AccountPool {
     this.entry = {
       id: ENTRY_ID,
       token,
-      refreshToken: null,
       email: profile?.email ?? null,
       accountId,
       organizationId: null,
@@ -127,9 +126,9 @@ export class AccountPool {
     return getCliAuthPath();
   }
 
-  acquire(options?: { model?: string; excludeIds?: string[]; preferredEntryId?: string }): AcquiredAccount | null {
+  acquire(options?: { model?: string }): AcquiredAccount | null {
     const entry = this.entry;
-    if (!entry || options?.excludeIds?.includes(ENTRY_ID)) return null;
+    if (!entry) return null;
     this.refreshStatus(entry);
     if (entry.status !== "active") return null;
     if (getConfig().quota.skip_exhausted && hasReachedCachedQuota(entry, options?.model)) return null;
@@ -194,17 +193,11 @@ export class AccountPool {
     if (entryId === ENTRY_ID) this.activeSlots.shift();
   }
 
-  hasAvailableAccounts(excludeIds?: string[]): boolean {
+  hasAvailableAccount(): boolean {
     const entry = this.entry;
-    if (!entry || excludeIds?.includes(ENTRY_ID)) return false;
+    if (!entry) return false;
     this.refreshStatus(entry);
     return entry.status === "active" && (!getConfig().quota.skip_exhausted || !hasReachedCachedQuota(entry));
-  }
-
-  getDistinctPlanAccounts(): Array<{ planType: string; entryId: string; token: string; accountId: string | null }> {
-    const entry = this.entry;
-    if (!entry || entry.status !== "active") return [];
-    return [{ planType: entry.planType ?? "unknown", entryId: ENTRY_ID, token: entry.token, accountId: entry.accountId }];
   }
 
   markStatus(entryId: string, status: AccountEntry["status"]): void {
@@ -305,20 +298,20 @@ export class AccountPool {
     this.schedulePersist();
   }
 
-  getAccounts(): AccountInfo[] {
-    return this.entry ? [this.toInfo(this.entry)] : [];
+  getAccount(): AccountInfo | null {
+    return this.entry ? this.toInfo(this.entry) : null;
+  }
+
+  getCurrentEntry(): AccountEntry | null {
+    return this.entry;
   }
 
   getEntry(entryId: string): AccountEntry | undefined {
     return entryId === ENTRY_ID ? this.entry ?? undefined : undefined;
   }
 
-  getAllEntries(): AccountEntry[] {
-    return this.entry ? [this.entry] : [];
-  }
-
   isAuthenticated(): boolean {
-    return this.hasAvailableAccounts();
+    return this.hasAvailableAccount();
   }
 
   getUserInfo(): { email?: string; accountId?: string; planType?: string } | null {
@@ -330,16 +323,6 @@ export class AccountPool {
   validateProxyApiKey(key: string): boolean {
     const configured = process.env.PROXY_API_KEY?.trim();
     return Boolean(configured && safeEqual(key, configured));
-  }
-
-  getPoolSummary(): { total: number; active: number; expired: number; quota_exhausted: number; rate_limited: number; refreshing: number; disabled: number; banned: number } {
-    const summary = { total: this.entry ? 1 : 0, active: 0, expired: 0, quota_exhausted: 0, rate_limited: 0, refreshing: 0, disabled: 0, banned: 0 };
-    const entry = this.entry;
-    if (!entry) return summary;
-    this.refreshStatus(entry);
-    if (entry.status === "active" && hasReachedCachedQuota(entry)) summary.rate_limited = 1;
-    else summary[entry.status] = 1;
-    return summary;
   }
 
   getCapacitySummary(): AccountCapacitySummary {

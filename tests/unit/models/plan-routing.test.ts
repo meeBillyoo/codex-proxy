@@ -5,7 +5,7 @@
  * 1. applyBackendModelsForPlan correctly builds planModelMap
  * 2. getModelPlanTypes returns correct plan associations
  * 3. When both free and team plans include a model, both are returned
- * 4. Account pool respects plan routing when acquiring accounts
+ * 4. The model catalog retains plan associations from backend responses
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";

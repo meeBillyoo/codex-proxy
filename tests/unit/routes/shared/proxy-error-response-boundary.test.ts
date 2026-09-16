@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
-  buildAccountExhaustionDetail,
   respondWithNoAccount,
   respondWithProxyError,
 } from "@src/routes/shared/proxy-error-response.js";
@@ -61,7 +60,6 @@ describe("proxy error response module boundary", () => {
   it("exports route error response helpers from their own module", () => {
     expect(respondWithNoAccount).toBeTypeOf("function");
     expect(respondWithProxyError).toBeTypeOf("function");
-    expect(buildAccountExhaustionDetail).toBeTypeOf("function");
 
     const errorResponse = source(ERROR_RESPONSE_MODULE);
     expect(importsNamedBinding(errorResponse, "stream-error-response.js", "streamErrorResponse", ERROR_RESPONSE_MODULE)).toBe(true);
@@ -73,7 +71,6 @@ describe("proxy error response module boundary", () => {
 
     expect(importsNamedBinding(proxyHandler, "proxy-error-response.js", "respondWithNoAccount", PROXY_HANDLER_MODULE)).toBe(true);
     expect(importsNamedBinding(proxyHandler, "proxy-error-response.js", "respondWithProxyError", PROXY_HANDLER_MODULE)).toBe(true);
-    expect(importsNamedBinding(proxyHandler, "proxy-error-response.js", "buildAccountExhaustionDetail", PROXY_HANDLER_MODULE)).toBe(false);
     expect(importedModuleSpecifiers(proxyHandler, PROXY_HANDLER_MODULE)).not.toEqual(expect.arrayContaining([
       "hono/utils/http-status",
       "./stream-error-response.js",

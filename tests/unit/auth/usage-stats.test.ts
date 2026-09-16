@@ -1,6 +1,6 @@
 /**
  * Tests for UsageStatsStore — snapshot recording, delta computation, aggregation,
- * and baseline preservation across account pool resets.
+ * and baseline preservation across auth/state resets.
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -50,23 +50,33 @@ function createMockPool(entries: Array<{
   image_request_failed_count?: number;
   estimated_cost_usd?: number;
 }>): AccountPool {
+  const totals = entries.reduce((sum, entry) => ({
+    input_tokens: sum.input_tokens + entry.input_tokens,
+    output_tokens: sum.output_tokens + entry.output_tokens,
+    cached_tokens: sum.cached_tokens + (entry.cached_tokens ?? 0),
+    image_input_tokens: sum.image_input_tokens + (entry.image_input_tokens ?? 0),
+    image_output_tokens: sum.image_output_tokens + (entry.image_output_tokens ?? 0),
+    image_request_count: sum.image_request_count + (entry.image_request_count ?? 0),
+    image_request_failed_count: sum.image_request_failed_count + (entry.image_request_failed_count ?? 0),
+    request_count: sum.request_count + entry.request_count,
+    estimated_cost_usd: sum.estimated_cost_usd + (entry.estimated_cost_usd ?? 0),
+  }), {
+    input_tokens: 0,
+    output_tokens: 0,
+    cached_tokens: 0,
+    image_input_tokens: 0,
+    image_output_tokens: 0,
+    image_request_count: 0,
+    image_request_failed_count: 0,
+    request_count: 0,
+    estimated_cost_usd: 0,
+  });
   return {
-    getAllEntries: () =>
-      entries.map((e, i) => ({
-        id: `entry-${i}`,
-        status: e.status,
-        usage: {
-          input_tokens: e.input_tokens,
-          output_tokens: e.output_tokens,
-          cached_tokens: e.cached_tokens ?? 0,
-          image_input_tokens: e.image_input_tokens ?? 0,
-          image_output_tokens: e.image_output_tokens ?? 0,
-          image_request_count: e.image_request_count ?? 0,
-          image_request_failed_count: e.image_request_failed_count ?? 0,
-          request_count: e.request_count,
-          estimated_cost_usd: e.estimated_cost_usd ?? 0,
-        },
-      })),
+    getCurrentEntry: () => entries.length === 0 ? null : ({
+      id: "codex-cli",
+      status: entries.some((entry) => entry.status === "active") ? "active" : entries[0].status,
+      usage: totals,
+    }),
   } as unknown as AccountPool;
 }
 
@@ -81,7 +91,7 @@ describe("UsageStatsStore", () => {
   });
 
   describe("recordSnapshot", () => {
-    it("records cumulative totals from all accounts", () => {
+    it("records cumulative totals from the current account state", () => {
       const pool = createMockPool([
         { status: "active", input_tokens: 1000, output_tokens: 200, request_count: 5 },
         { status: "active", input_tokens: 500, output_tokens: 100, request_count: 3 },
@@ -105,7 +115,7 @@ describe("UsageStatsStore", () => {
         image_request_failed_count: 0,
         estimated_cost_usd: 0,
         request_count: 10,
-        active_accounts: 2,
+        active_accounts: 1,
       });
     });
 
@@ -172,7 +182,7 @@ describe("UsageStatsStore", () => {
         total_image_request_failed_count: 0,
         total_estimated_cost_usd: 0,
         total_request_count: 8,
-        total_accounts: 2,
+        total_accounts: 1,
         active_accounts: 1,
       });
     });
@@ -243,7 +253,7 @@ describe("UsageStatsStore", () => {
     });
   });
 
-  describe("baseline — pool reset detection", () => {
+  describe("baseline — account state reset detection", () => {
     it("absorbs lost usage into baseline when pool totals drop", () => {
       const now = Date.now();
       const snapshots: UsageSnapshot[] = [

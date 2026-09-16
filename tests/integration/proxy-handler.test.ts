@@ -449,8 +449,8 @@ describe("proxy-handler integration", () => {
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  // 4. CodexApiError 429 → markRateLimited with parsed retryAfterSec + fallback to next account
-  it("handles 429 by parsing resets_in_seconds and falling back to next account", async () => {
+  // 4. CodexApiError 429 → mark the current CLI account rate-limited
+  it("handles 429 by parsing resets_in_seconds", async () => {
     const body429 = JSON.stringify({
       error: { type: "usage_limit_reached", message: "Limit reached", resets_in_seconds: 471284 },
     });
@@ -473,20 +473,17 @@ describe("proxy-handler integration", () => {
     const { app } = buildTestApp({ accountPool, fmt });
 
     const res = await app.request("/test", { method: "POST" });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(429);
 
     expect(accountPool.applyRateLimit429).toHaveBeenCalledWith("e1", {
       retryAfterSec: 471284,
       countRequest: true,
     });
-    // Second account succeeds — release called with usage
-    expect(accountPool.release).toHaveBeenCalledWith("e2", {
-      input_tokens: 10,
-      output_tokens: 20,
-    });
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
+    expect(createCount).toBe(1);
   });
 
-  it("attributes WebSocket rate-limit callback updates to the failed account before fallback", async () => {
+  it("attributes WebSocket rate-limit callback updates to the current account", async () => {
     const body429 = JSON.stringify({
       error: { type: "usage_limit_reached", message: "Limit reached", resets_in_seconds: 123 },
     });
@@ -517,7 +514,7 @@ describe("proxy-handler integration", () => {
     const { app } = buildTestApp({ accountPool, fmt });
 
     const res = await app.request("/test", { method: "POST" });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(429);
 
     expect(accountPool.updateCachedQuota).toHaveBeenCalledTimes(1);
     expect(accountPool.updateCachedQuota).toHaveBeenCalledWith("e1", expect.objectContaining({
@@ -532,12 +529,8 @@ describe("proxy-handler integration", () => {
       retryAfterSec: 123,
       countRequest: true,
     });
-    expect(accountPool.release).toHaveBeenCalledTimes(2);
+    expect(accountPool.release).toHaveBeenCalledTimes(1);
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
-    expect(accountPool.release).toHaveBeenCalledWith("e2", {
-      input_tokens: 10,
-      output_tokens: 20,
-    });
   });
 
   // 4b. 429 with no resets_in_seconds → retryAfterSec undefined
@@ -589,8 +582,8 @@ describe("proxy-handler integration", () => {
     expect(call[1].countRequest).toBe(true);
   });
 
-  // 4d. 429 exhausts all accounts → returns 429 to client
-  it("returns 429 when all accounts are rate limited", async () => {
+  // 4d. 429 on the current account → returns 429 to client
+  it("returns 429 when the current account is rate limited", async () => {
     const body429 = JSON.stringify({
       error: { type: "usage_limit_reached", resets_in_seconds: 100 },
     });
@@ -609,13 +602,10 @@ describe("proxy-handler integration", () => {
     const res = await app.request("/test", { method: "POST" });
     expect(res.status).toBe(429);
 
-    // Both accounts marked rate limited
-    expect(accountPool.applyRateLimit429).toHaveBeenCalledTimes(2);
+    expect(accountPool.applyRateLimit429).toHaveBeenCalledTimes(1);
     expect(accountPool.applyRateLimit429).toHaveBeenCalledWith("e1", { retryAfterSec: 100, countRequest: true });
-    expect(accountPool.applyRateLimit429).toHaveBeenCalledWith("e2", { retryAfterSec: 100, countRequest: true });
-    expect(accountPool.release).toHaveBeenCalledTimes(2);
+    expect(accountPool.release).toHaveBeenCalledTimes(1);
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
-    expect(accountPool.release).toHaveBeenCalledWith("e2", undefined);
   });
 
   // 5. CodexApiError 4xx → formatError with status code
@@ -636,7 +626,7 @@ describe("proxy-handler integration", () => {
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  it("releases model-not-supported account before retrying a fallback account", async () => {
+  it("returns model-not-supported from the current account", async () => {
     let upstreamCalls = 0;
     mockCreateResponse = () => {
       upstreamCalls++;
@@ -657,27 +647,18 @@ describe("proxy-handler integration", () => {
     const { app } = buildTestApp({ accountPool, fmt });
 
     const res = await app.request("/test", { method: "POST" });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(400);
 
     expect(accountPool.acquire).toHaveBeenNthCalledWith(1, {
       model: "codex",
-      excludeIds: undefined,
-      preferredEntryId: undefined,
     });
-    expect(accountPool.acquire).toHaveBeenNthCalledWith(2, {
-      model: "codex",
-      excludeIds: ["e1"],
-      preferredEntryId: undefined,
-    });
-    expect(accountPool.release).toHaveBeenNthCalledWith(1, "e1", undefined);
-    expect(accountPool.release).toHaveBeenNthCalledWith(2, "e2", {
-      input_tokens: 10,
-      output_tokens: 20,
-    });
+    expect(accountPool.acquire).toHaveBeenCalledTimes(1);
+    expect(upstreamCalls).toBe(1);
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  // 5b. CodexApiError 403 (non-CF) → marks banned, tries fallback
-  it("handles 403 ban by marking banned and trying next account", async () => {
+  // 5b. CodexApiError 403 (non-CF) → marks current account banned
+  it("handles 403 ban by marking the current account banned", async () => {
     mockCreateResponse = () =>
       Promise.reject(new CodexApiError(403, '{"detail": "Account suspended"}'));
 
@@ -696,8 +677,8 @@ describe("proxy-handler integration", () => {
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  // 5c. CF 403 (Cloudflare challenge) → cooldown + fallback retry, NOT ban
-  it("handles CF 403 as cooldown retry, not ban", async () => {
+  // 5c. CF 403 (Cloudflare challenge) → cooldown, NOT ban
+  it("handles CF 403 as a cooldown error, not a ban", async () => {
     mockCreateResponse = () =>
       Promise.reject(new CodexApiError(
         403,
@@ -722,12 +703,7 @@ describe("proxy-handler integration", () => {
 
     expect(accountPool.markStatus).not.toHaveBeenCalled();
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
-    expect(accountPool.hasAvailableAccounts).toHaveBeenCalledWith(["e1"]);
-    expect(accountPool.acquire).toHaveBeenNthCalledWith(2, {
-      model: "codex",
-      excludeIds: ["e1"],
-      preferredEntryId: undefined,
-    });
+    expect(accountPool.acquire).toHaveBeenCalledTimes(1);
     expect(getCfChallengeCooldown("e1")?.delaySeconds).toBe(10);
   });
 
@@ -786,7 +762,7 @@ describe("proxy-handler integration", () => {
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  // 8b. Upstream premature close → 504, no cross-account retry
+  // 8b. Upstream premature close → 504, no futile retry
   it("fails fast with 504 on UpstreamPrematureCloseError, no retry", async () => {
     let acquireCount = 0;
     const accountPool = createMockAccountPool({
@@ -814,8 +790,8 @@ describe("proxy-handler integration", () => {
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  // 8. Empty response retry (non-streaming) → account switch, second succeeds
-  it("retries with a new account on EmptyResponseError", async () => {
+  // 8. Empty response retry (non-streaming) → reacquire current account
+  it("retries the current account on EmptyResponseError", async () => {
     let callCount = 0;
     const accountPool = createMockAccountPool({
       acquire: vi.fn(() => {
@@ -823,7 +799,7 @@ describe("proxy-handler integration", () => {
         if (callCount === 1) {
           return { entryId: "e1", token: "tok1", accountId: "acc1" };
         }
-        return { entryId: "e2", token: "tok2", accountId: "acc2" };
+        return { entryId: "e1", token: "tok1", accountId: "acc1" };
       }),
     });
 
@@ -855,25 +831,25 @@ describe("proxy-handler integration", () => {
     const body = await res.json();
     expect(body).toEqual(successResult.response);
 
-    // First account released with EmptyResponseError usage, second with success usage
+    // The same account is released and reacquired before the retry.
     expect(accountPool.recordEmptyResponse).toHaveBeenCalledWith("e1");
     expect(accountPool.release).toHaveBeenCalledWith("e1", {
       input_tokens: 1,
       output_tokens: 0,
     });
-    expect(accountPool.release).toHaveBeenCalledWith("e2", {
+    expect(accountPool.release).toHaveBeenCalledWith("e1", {
       input_tokens: 5,
       output_tokens: 15,
     });
   });
 
-  it("attributes collect CodexApiError after EmptyResponseError retry to the new account", async () => {
+  it("attributes a collect error after EmptyResponseError retry to the current account", async () => {
     let acquireCount = 0;
     const accountPool = createMockAccountPool({
       acquire: vi.fn(() => {
         acquireCount++;
         if (acquireCount === 1) return { entryId: "e1", token: "tok1", accountId: "acc1" };
-        return { entryId: "e2", token: "tok2", accountId: "acc2" };
+        return { entryId: "e1", token: "tok1", accountId: "acc1" };
       }),
     });
 
@@ -903,7 +879,7 @@ describe("proxy-handler integration", () => {
       input_tokens: 1,
       output_tokens: 0,
     });
-    expect(accountPool.release).toHaveBeenCalledWith("e2", undefined);
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
   // 9. Empty response retries exhausted → 502
@@ -914,11 +890,7 @@ describe("proxy-handler integration", () => {
     const accountPool = createMockAccountPool({
       acquire: vi.fn(() => {
         acquireCount++;
-        return {
-          entryId: `e${acquireCount}`,
-          token: `tok${acquireCount}`,
-          accountId: `acc${acquireCount}`,
-        };
+        return { entryId: "e1", token: "tok1", accountId: "acc1" };
       }),
     });
 
@@ -1008,8 +980,8 @@ describe("proxy-handler integration", () => {
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  // 13. 401 token invalidation → marks expired, tries next account
-  it("handles 401 by marking expired and trying next account", async () => {
+  // 13. 401 token invalidation → marks current account expired
+  it("handles 401 by marking the current account expired", async () => {
     let createCount = 0;
     mockCreateResponse = () => {
       createCount++;
@@ -1029,17 +1001,15 @@ describe("proxy-handler integration", () => {
     const { app } = buildTestApp({ accountPool, fmt });
 
     const res = await app.request("/test", { method: "POST" });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(401);
 
     expect(accountPool.markStatus).toHaveBeenCalledWith("e1", "expired");
-    expect(accountPool.release).toHaveBeenCalledWith("e2", {
-      input_tokens: 10,
-      output_tokens: 20,
-    });
+    expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
+    expect(createCount).toBe(1);
   });
 
-  // 14. 401 with no fallback account → returns 401
-  it("returns 401 when token invalidated and no other account available", async () => {
+  // 14. Invalid current token → returns 401
+  it("returns 401 when the current token is invalidated", async () => {
     mockCreateResponse = () =>
       Promise.reject(new CodexApiError(401, "Unauthorized"));
 
@@ -1058,8 +1028,8 @@ describe("proxy-handler integration", () => {
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
   });
 
-  // 15. 429 with no available accounts → descriptive "all accounts exhausted" error
-  it("returns descriptive error when 429 and no accounts available for retry", async () => {
+  // 15. Current account quota error preserves the upstream message
+  it("returns the current account's 429 message", async () => {
     const body429 = JSON.stringify({
       error: { type: "usage_limit_reached", message: "Limit reached" },
     });
@@ -1082,21 +1052,19 @@ describe("proxy-handler integration", () => {
     expect(res.status).toBe(429);
 
     const body = await res.json();
-    // format429 is used for 429 errors
     expect(fmt.format429).toHaveBeenCalled();
     const message = fmt.format429.mock.calls[0][0] as string;
-    expect(message).toContain("All accounts exhausted");
-    expect(message).toContain("2 rate-limited");
+    expect(message).toContain("Limit reached");
     expect(accountPool.acquire).toHaveBeenCalledTimes(1);
   });
 
-  // 19. Explicit continuation account fallback — preserve state and fail closed in transport
-  it("preserves explicit continuation state on banned-owner fallback for fail-closed continuity", async () => {
+  // 19. Explicit continuation stays attached to the current CLI account.
+  it("preserves explicit continuation state on the current account", async () => {
     const affinityMap = getSessionAffinityMap();
     affinityMap.record(
       "resp_preferred",
-      "e_preferred",
-      "thread-cascading-ban-defense",
+      "codex-cli",
+      "thread-current-account",
       "turn-state-preferred",
     );
 
@@ -1106,14 +1074,9 @@ describe("proxy-handler integration", () => {
       return new Response("data: {}\n\n");
     };
 
-    // Preferred account is banned — getEntry must reflect this
     const accountPool = createMockAccountPool({
-      acquire: vi.fn(() => ({ entryId: "e_new", token: "tok_new", accountId: "acc_new" })),
-      getEntry: vi.fn((id: string) =>
-        id === "e_preferred"
-          ? { email: "banned@test.com", status: "banned" }
-          : { email: "new@test.com", status: "active" },
-      ),
+      acquire: vi.fn(() => ({ entryId: "codex-cli", token: "tok", accountId: "acc" })),
+      getEntry: vi.fn(() => ({ email: "current@test.com", status: "active" })),
     });
 
     const fmt = createMockFormatAdapter();
@@ -1133,16 +1096,16 @@ describe("proxy-handler integration", () => {
     expect(capturedRequest).toBeDefined();
     expect(capturedRequest?.previous_response_id).toBe("resp_preferred");
     expect(capturedRequest?.turnState).toBeUndefined();
-    expect(affinityMap.lookup("resp_preferred")).toBe("e_preferred");
+    expect(affinityMap.lookup("resp_preferred")).toBe("codex-cli");
   });
 
-  // 19b. Cascading Ban Defense — does NOT strip for quota exhaustion
-  it("does NOT strip previous_response_id when preferred account is only quota_exhausted", async () => {
+  // 19b. Explicit continuation remains intact on the current account.
+  it("does not strip previous_response_id for an explicit continuation", async () => {
     const affinityMap = getSessionAffinityMap();
     affinityMap.record(
       "resp_quota",
-      "e_quota",
-      "thread-quota-rotation",
+      "codex-cli",
+      "thread-current-account",
       "turn-state-quota",
     );
 
@@ -1153,12 +1116,8 @@ describe("proxy-handler integration", () => {
     };
 
     const accountPool = createMockAccountPool({
-      acquire: vi.fn(() => ({ entryId: "e_new", token: "tok_new", accountId: "acc_new" })),
-      getEntry: vi.fn((id: string) =>
-        id === "e_quota"
-          ? { email: "quota@test.com", status: "quota_exhausted" }
-          : { email: "new@test.com", status: "active" },
-      ),
+      acquire: vi.fn(() => ({ entryId: "codex-cli", token: "tok", accountId: "acc" })),
+      getEntry: vi.fn(() => ({ email: "current@test.com", status: "active" })),
     });
 
     const fmt = createMockFormatAdapter();
@@ -1175,7 +1134,6 @@ describe("proxy-handler integration", () => {
     const res = await app.request("/test", { method: "POST" });
     expect(res.status).toBe(200);
 
-    // previous_response_id should be PRESERVED (not stripped) for quota rotation
     expect(capturedRequest).toBeDefined();
     expect(capturedRequest?.previous_response_id).toBe("resp_quota");
   });
@@ -1225,8 +1183,8 @@ describe("proxy-handler integration", () => {
     }));
   });
 
-  // 21. Quota Drift-Defense Verification — failover when quota is still limit_reached
-  it("verifies dirty quota and releases/failovers to next account if quota is still limit_reached", async () => {
+  // 21. Quota Drift-Defense Verification — reject when current quota is still limit_reached
+  it("verifies dirty quota and rejects when the current account is still limit_reached", async () => {
     let usageCalls = 0;
     mockGetUsage = async () => {
       usageCalls++;
@@ -1260,16 +1218,11 @@ describe("proxy-handler integration", () => {
     const { app } = buildTestApp({ accountPool, fmt });
 
     const res = await app.request("/test", { method: "POST" });
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(503);
 
-    // e1 should have been verified, found to be limit_reached, released, and we fall back to e2
     expect(usageCalls).toBe(1);
-    expect(responseCalls).toBe(1); // e2 succeeds
+    expect(responseCalls).toBe(0);
     expect(accountPool.release).toHaveBeenCalledWith("e1", undefined);
-    expect(accountPool.acquire).toHaveBeenNthCalledWith(2, {
-      model: "codex",
-      excludeIds: ["e1"],
-      preferredEntryId: undefined,
-    });
+    expect(accountPool.acquire).toHaveBeenCalledTimes(1);
   });
 });

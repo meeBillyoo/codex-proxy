@@ -15,11 +15,9 @@ import type { UsageInfo } from "../../translation/codex-event-extractor.js";
 export function acquireAccount(
   pool: AccountPool,
   model: string,
-  excludeIds?: string[],
   tag?: string,
-  preferredEntryId?: string,
 ): AcquiredAccount | null {
-  const acquired = pool.acquire({ model, excludeIds, preferredEntryId });
+  const acquired = pool.acquire({ model });
   if (!acquired && tag) {
     console.warn(`[${tag}] No available account for model "${model}"`);
   }

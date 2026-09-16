@@ -21,7 +21,7 @@ const CODEX_RATE_LIMIT_RESPONSE_HEADERS = [
  * the primary and weekly (secondary) account limits in /status.
  *
  * WebSocket upstreams send rate limits as events rather than HTTP headers.
- * Those events are cached on the account pool, which provides a fallback for
+ * Those events are cached on the current account, which provides metadata for
  * the next response when the upstream response itself has no quota headers.
  */
 export function forwardCodexRateLimitHeaders(

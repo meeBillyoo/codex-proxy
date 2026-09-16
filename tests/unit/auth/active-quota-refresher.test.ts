@@ -1,8 +1,8 @@
 /**
  * Tests for issue #753 Bug 1 fix: preserveLearnedLocks must not let an
  * optimistic /usage answer clear a 429-learned lock whose reset_at is still
- * in the future — otherwise the exhausted account re-enters rotation and
- * wastes a full payload upload + failover latency on every cycle.
+ * in the future — otherwise the exhausted account appears available again
+ * and wastes a full payload upload on every cycle.
  */
 
 import { describe, it, expect } from "vitest";

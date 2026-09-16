@@ -23,14 +23,12 @@ import { errorHandler } from "@src/middleware/error-handler.js";
 import { createImagesRoutes } from "@src/routes/images.js";
 import { AccountPool } from "@src/auth/account-pool.js";
 import { CookieJar } from "@src/proxy/cookie-jar.js";
-import { ProxyPool } from "@src/proxy/proxy-pool.js";
 import { loadStaticModels } from "@src/models/model-store.js";
 
 interface TestContext {
   app: Hono;
   accountPool: AccountPool;
   cookieJar: CookieJar;
-  proxyPool: ProxyPool;
 }
 
 let ctx: TestContext;
@@ -39,14 +37,13 @@ function buildApp(opts?: { noAccount?: boolean }): TestContext {
   loadStaticModels();
   const accountPool = new AccountPool();
   const cookieJar = new CookieJar();
-  const proxyPool = new ProxyPool();
   if (opts?.noAccount) vi.spyOn(accountPool, "isAuthenticated").mockReturnValue(false);
 
   const app = new Hono();
   app.use("*", requestId);
   app.onError(errorHandler);
-  app.route("/", createImagesRoutes(accountPool, cookieJar, proxyPool));
-  return { app, accountPool, cookieJar, proxyPool };
+  app.route("/", createImagesRoutes(accountPool, cookieJar));
+  return { app, accountPool, cookieJar };
 }
 
 beforeEach(() => {
@@ -70,7 +67,6 @@ beforeEach(() => {
 
 afterEach(() => {
   ctx.cookieJar.destroy();
-  ctx.proxyPool.destroy();
   ctx.accountPool.destroy();
 });
 
@@ -135,7 +131,7 @@ describe("POST /v1/images/generations", () => {
       partial_images: 2,
     }]);
     expect(sent.tools[0].quality).toBeUndefined();
-    const account = ctx.accountPool.getAllEntries()[0];
+    const account = ctx.accountPool.getCurrentEntry();
     expect(account?.usage.image_output_tokens).toBe(1);
     expect(account?.usage.image_request_count).toBe(1);
     expect(account?.usage.image_request_failed_count ?? 0).toBe(0);
@@ -244,7 +240,7 @@ describe("POST /v1/images/generations", () => {
     expect(res.status).toBe(502);
     const body = await res.json() as { error: { code: string } };
     expect(body.error.code).toBe("image_generation_failed");
-    const account = ctx.accountPool.getAllEntries()[0];
+    const account = ctx.accountPool.getCurrentEntry();
     expect(account?.usage.image_request_count ?? 0).toBe(0);
     expect(account?.usage.image_request_failed_count).toBe(1);
   });
@@ -317,7 +313,7 @@ describe("POST /v1/images/generations", () => {
     expect(res.status).toBe(502);
     const body = await res.json() as { error: { code: string } };
     expect(body.error.code).toBe("image_generation_failed");
-    const account = ctx.accountPool.getAllEntries()[0];
+    const account = ctx.accountPool.getCurrentEntry();
     expect(account?.usage.image_request_count ?? 0).toBe(0);
     expect(account?.usage.image_request_failed_count).toBe(1);
   });
@@ -388,7 +384,6 @@ describe("POST /v1/images/generations", () => {
     expect(body.error.code).toBe("invalid_api_key");
     expect(getMockTransport().post).not.toHaveBeenCalled();
     noAccount.cookieJar.destroy();
-    noAccount.proxyPool.destroy();
     noAccount.accountPool.destroy();
   });
 

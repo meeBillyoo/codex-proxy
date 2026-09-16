@@ -24,18 +24,18 @@ export function createConnectionRoutes(accountPool: AccountPool): Hono {
       error: null,
     });
 
-    // 2. Accounts check
-    const accountsStart = Date.now();
-    const poolSummary = accountPool.getPoolSummary();
-    const hasActive = poolSummary.active > 0;
+    // 2. Codex CLI account check
+    const accountStart = Date.now();
+    const account = accountPool.getAccount();
+    const hasActive = account?.status === "active";
     checks.push({
-      name: "accounts",
+      name: "account",
       status: hasActive ? "pass" : "fail",
-      latencyMs: Date.now() - accountsStart,
+      latencyMs: Date.now() - accountStart,
       detail: hasActive
-        ? `${poolSummary.active} active / ${poolSummary.total} total`
-        : `0 active / ${poolSummary.total} total`,
-      error: hasActive ? null : "No active accounts",
+        ? `${account.email ?? "Codex CLI account"} (${account.planType ?? "unknown plan"})`
+        : account ? `Codex CLI account status: ${account.status}` : "Codex CLI auth file unavailable",
+      error: hasActive ? null : "Codex CLI account is unavailable",
     });
     if (!hasActive) overallFailed = true;
 
@@ -60,7 +60,7 @@ export function createConnectionRoutes(accountPool: AccountPool): Hono {
         name: "upstream",
         status: "skip",
         latencyMs: 0,
-        detail: "Skipped (no active accounts)",
+        detail: "Skipped (Codex CLI account unavailable)",
         error: null,
       });
     } else {
@@ -72,7 +72,7 @@ export function createConnectionRoutes(accountPool: AccountPool): Hono {
           status: "fail",
           latencyMs: Date.now() - upstreamStart,
           detail: null,
-          error: "Could not acquire account for test",
+          error: "Could not acquire Codex CLI account for test",
         });
         overallFailed = true;
       } else {

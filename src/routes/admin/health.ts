@@ -14,14 +14,18 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
 
   app.get("/health", async (c) => {
     const authenticated = accountPool.isAuthenticated();
-    const poolSummary = accountPool.getPoolSummary();
+    const account = accountPool.getAccount();
     const capacitySummary = accountPool.getCapacitySummary();
     return c.json({
       status: "ok",
       authenticated,
-      pool: {
-        total: poolSummary.total,
-        active: poolSummary.active,
+      account: {
+        available: account !== null,
+        status: account?.status ?? null,
+        email: account?.email ?? null,
+        plan_type: account?.planType ?? null,
+      },
+      concurrency: {
         ...capacitySummary,
       },
       uptime_seconds: Math.floor(process.uptime()),
@@ -100,7 +104,7 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
     }
 
     const transport = getTransportInfo();
-    const poolSummary = accountPool.getPoolSummary();
+    const account = accountPool.getAccount();
 
     return c.json({
       transport: {
@@ -109,9 +113,9 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
         impersonate: transport.impersonate,
       },
       proxy: { url: getProxyUrl() },
-      accounts: {
-        total: poolSummary.total,
-        active: poolSummary.active,
+      account: {
+        available: account !== null,
+        status: account?.status ?? null,
         authenticated: accountPool.isAuthenticated(),
       },
       paths: {

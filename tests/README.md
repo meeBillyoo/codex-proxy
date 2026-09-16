@@ -33,7 +33,7 @@ tests/
 │   ├── routes/         # Account CRUD, settings, responses, dashboard login
 │   │   └── shared/     # Account acquisition, error handler, response processor
 │   ├── services/       # Account import/mutation/query
-│   ├── tls/            # Direct fallback, proxy hostname resolution
+│   ├── tls/            # Direct network fallback, proxy hostname resolution
 │   ├── translation/    # All codec pairs (openai/anthropic/gemini ↔ codex)
 │   ├── types/          # Zod schema validation
 │   ├── utils/          # Jitter, retry, logger, yaml-mutate
@@ -67,7 +67,7 @@ The default `npm run test:real` suite only exercises free-tier accounts. The fol
 - **Secondary rate-limit rotation** — `secondary-quota.test.ts` stress scenarios use mocks only.
 - **Team/Plus plan model access** — e.g. `gpt-5.4` returns `400` on free accounts.
 - **Credits balance management** — `credits` is `null` for free accounts.
-- **Rate-limit (429) fallback recovery** — cannot trigger a real 429 to validate recovery.
+- **Rate-limit (429) state handling** — cannot trigger a real 429 reliably.
 - **Prompt cache hit rates** — upstream returns `cached_tokens=0` for free accounts.
 
 Mocks validate plumbing (field presence, type correctness) but cannot catch cross-plan behavioral differences. When a Plus/Team test account or recorded real-tier fixtures become available, revisit these paths and extend `tests/real/`.
@@ -88,4 +88,4 @@ Mocks validate plumbing (field presence, type correctness) but cannot catch cros
 ```
 
 Mocked: `@src/tls/transport.js`, `@src/config.js`, `@src/paths.js`, `fs` (models.yaml only), background tasks.
-Real: AccountPool, CookieJar, ProxyPool, CodexApi, all translation layers, all middleware.
+Real: AccountPool, CookieJar, CodexApi, all translation layers, all middleware.

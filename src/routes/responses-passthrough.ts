@@ -205,7 +205,6 @@ export async function* streamPassthrough(
           model: streamContext?.model ?? model,
           accountEntryId: streamContext?.accountEntryId,
           variantHash: streamContext?.variantHash,
-          fallback: streamContext?.fallback,
           responseId,
           detail,
         });
@@ -242,7 +241,6 @@ export async function* streamPassthrough(
           model: streamContext?.model ?? model,
           accountEntryId: streamContext?.accountEntryId,
           variantHash: streamContext?.variantHash,
-          fallback: streamContext?.fallback,
           responseId,
           detail: `${raw.event}: ${err.code}: ${err.message}`,
         });
@@ -360,7 +358,6 @@ export async function* streamPassthrough(
       model: streamContext?.model ?? model,
       accountEntryId: streamContext?.accountEntryId,
       variantHash: streamContext?.variantHash,
-      fallback: streamContext?.fallback,
       responseId,
     });
     onResponseMetadata?.({ prematureClose: true });
@@ -507,7 +504,7 @@ export const PASSTHROUGH_FORMAT: FormatAdapter = {
     error: {
       type: "server_error",
       code: "no_available_accounts",
-      message: "No available accounts. All accounts are expired or rate-limited.",
+      message: "The Codex CLI account is unavailable, expired, or rate-limited.",
     },
   }),
   format429: (msg) => ({

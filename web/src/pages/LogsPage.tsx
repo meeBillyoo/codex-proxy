@@ -320,14 +320,7 @@ export function LogsPage({ embedded = false }: { embedded?: boolean }) {
                         </span>
                       </div>
                       <div class="w-[84px] shrink-0 text-left pr-1">
-                        {row.fallback ? (
-                          <span
-                            class="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400"
-                            title={row.account ?? undefined}
-                          >
-                            {t("logsFallback")}
-                          </span>
-                        ) : row.account ? (
+                        {row.account ? (
                           <span class="block truncate text-slate-600 dark:text-slate-300" title={row.account}>
                             {row.account}
                           </span>
@@ -537,11 +530,11 @@ export function LogsPage({ embedded = false }: { embedded?: boolean }) {
                           <span class="text-slate-700 dark:text-slate-200">{logs.selected.provider}</span>
                         </div>
                       )}
-                      {(logs.selected.account || logs.selected.fallback) && (
+                      {logs.selected.account && (
                         <div class="flex justify-between py-0.5 border-b border-slate-100 dark:border-border-dark">
                           <span class="text-slate-400 dark:text-text-dim">{t("logsAccount")}</span>
-                          <span class={`${logs.selected.fallback ? "text-orange-600 dark:text-orange-400" : "text-slate-700 dark:text-slate-200"}`}>
-                            {logs.selected.fallback ? t("logsFallback") : logs.selected.account}
+                          <span class="text-slate-700 dark:text-slate-200">
+                            {logs.selected.account}
                           </span>
                         </div>
                       )}

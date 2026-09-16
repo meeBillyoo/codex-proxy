@@ -7,7 +7,7 @@ export function createAuthRoutes(pool: AccountPool): Hono {
   const app = new Hono();
 
   app.get("/auth/status", (c) => {
-    const account = pool.getAccounts()[0] ?? null;
+    const account = pool.getAccount();
     return c.json({
       authenticated: pool.isAuthenticated(),
       account,
@@ -16,7 +16,7 @@ export function createAuthRoutes(pool: AccountPool): Hono {
   });
 
   app.get("/auth/account", (c) => {
-    const account = pool.getAccounts()[0];
+    const account = pool.getAccount();
     if (!account) {
       c.status(404);
       return c.json({

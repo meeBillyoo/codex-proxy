@@ -64,5 +64,5 @@ export function useAccounts() {
     return () => clearInterval(timer);
   }, [load]);
 
-  return { account, list: account ? [account] : [], authFile, loading, refreshing, lastUpdated, error, reload };
+  return { account, authFile, loading, refreshing, lastUpdated, error, reload };
 }

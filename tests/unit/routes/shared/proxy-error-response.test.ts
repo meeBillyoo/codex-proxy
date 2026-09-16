@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Hono } from "hono";
 import {
-  buildAccountExhaustionDetail,
   respondWithNoAccount,
   respondWithProxyError,
 } from "@src/routes/shared/proxy-error-response.js";
@@ -22,21 +21,6 @@ function createRequest(isStreaming: boolean): ProxyRequest {
 }
 
 describe("proxy error response helpers", () => {
-  it("builds account exhaustion detail from inactive pool counts", () => {
-    expect(buildAccountExhaustionDetail({
-      total: 6,
-      active: 0,
-      rate_limited: 2,
-      expired: 1,
-      banned: 1,
-      disabled: 0,
-      quota_exhausted: 1,
-      refreshing: 1,
-    }, "Rate limited")).toBe(
-      "All accounts exhausted (2 rate-limited, 1 expired, 1 banned, 1 quota-exhausted, 1 refreshing). Rate limited",
-    );
-  });
-
   it("formats non-streaming proxy errors with the route-specific 429 formatter", async () => {
     const app = new Hono();
     const fmt = createMockFormatAdapter();
@@ -47,7 +31,7 @@ describe("proxy error response helpers", () => {
       req,
       fmt,
       status: 429,
-      message: "All accounts exhausted",
+      message: "Current Codex CLI account is rate-limited",
       useFormat429: true,
     }));
 
@@ -56,9 +40,9 @@ describe("proxy error response helpers", () => {
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({
       error: "rate_limited",
-      message: "All accounts exhausted",
+      message: "Current Codex CLI account is rate-limited",
     });
-    expect(fmt.format429).toHaveBeenCalledWith("All accounts exhausted");
+    expect(fmt.format429).toHaveBeenCalledWith("Current Codex CLI account is rate-limited");
     expect(fmt.formatError).not.toHaveBeenCalled();
   });
 

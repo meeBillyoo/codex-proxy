@@ -16,7 +16,6 @@ import {
 
 export interface RetryState {
   stripAndRetryDone: boolean;
-  modelRetried: boolean;
   implicitResumeActive: boolean;
   previousResponseId: string | undefined;
   /** True when the downstream client supplied previous_response_id explicitly.
@@ -38,7 +37,7 @@ export type RetryAction =
  * Priority order:
  *   1. Implicit resume replay (WebSocket failures on resumed connections)
  *   2. Strip previous_response_id (stale session references)
- *   3. Error handler (429/4xx/5xx → fallback account or respond)
+ *   3. Error handler (429/4xx/5xx → update account state and respond)
  *
  * This is a pure function — no side effects. The caller applies the decision.
  */
@@ -68,6 +67,6 @@ export function classifyRetryAction(
     }
   }
 
-  // Priority 3: delegate to error handler (429/ban/expired/5xx → fallback or respond)
+  // Priority 3: delegate to the current-account error handler.
   return { type: "error_handler_decides" };
 }

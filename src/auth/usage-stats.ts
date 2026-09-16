@@ -1,13 +1,13 @@
 /**
  * Usage Stats — time-series snapshot recording and aggregation.
  *
- * Records periodic snapshots of cumulative token usage across all accounts.
+ * Records periodic snapshots of cumulative token usage for the CLI account.
  * Snapshots are persisted to data/usage-history.json. Retention is
  * configurable and defaults to unlimited.
  * Aggregation (delta computation, bucketing) happens on read.
  *
  * A "baseline" accumulates usage from accounts that have been removed or
- * replaced, so historical totals survive account pool resets.
+ * replaced, so historical totals survive CLI auth changes.
  */
 
 import {
@@ -205,9 +205,9 @@ export class UsageStatsStore {
     console.log(`[UsageStats] Recovered baseline: ${this.baseline.input_tokens} in / ${this.baseline.output_tokens} out / ${this.baseline.request_count} req / ${this.baseline.cached_tokens ?? 0} cached / ${this.baseline.image_input_tokens ?? 0} image_in / ${this.baseline.image_output_tokens ?? 0} image_out / ${this.baseline.image_request_count ?? 0} img-req / ${this.baseline.image_request_failed_count ?? 0} img-failed`);
   }
 
-  /** Sum current live usage from all accounts in the pool. */
+  /** Read current live usage from the Codex CLI account. */
   private poolTotals(pool: AccountPool): { input_tokens: number; output_tokens: number; cached_tokens: number; image_input_tokens: number; image_output_tokens: number; image_request_count: number; image_request_failed_count: number; estimated_cost_usd: number; request_count: number; active_accounts: number; total_accounts: number } {
-    const entries = pool.getAllEntries();
+    const entry = pool.getCurrentEntry();
     let input_tokens = 0;
     let output_tokens = 0;
     let cached_tokens = 0;
@@ -219,7 +219,7 @@ export class UsageStatsStore {
     let request_count = 0;
     let active_accounts = 0;
 
-    for (const entry of entries) {
+    if (entry) {
       input_tokens += entry.usage.input_tokens;
       output_tokens += entry.usage.output_tokens;
       cached_tokens += entry.usage.cached_tokens ?? 0;
@@ -232,16 +232,16 @@ export class UsageStatsStore {
       if (entry.status === "active") active_accounts++;
     }
 
-    return { input_tokens, output_tokens, cached_tokens, image_input_tokens, image_output_tokens, image_request_count, image_request_failed_count, estimated_cost_usd, request_count, active_accounts, total_accounts: entries.length };
+    return { input_tokens, output_tokens, cached_tokens, image_input_tokens, image_output_tokens, image_request_count, image_request_failed_count, estimated_cost_usd, request_count, active_accounts, total_accounts: entry ? 1 : 0 };
   }
 
-  /** Take a snapshot of current cumulative usage across all accounts. */
+  /** Take a snapshot of current cumulative usage. */
   recordSnapshot(pool: AccountPool): void {
     const live = this.poolTotals(pool);
     const now = new Date().toISOString();
 
-    // Detect pool reset: if live totals dropped below previous snapshot,
-    // the difference was lost usage from removed accounts — absorb into baseline.
+    // Detect an auth/state reset: if live totals dropped below the previous
+    // snapshot, absorb the missing usage into the historical baseline.
     const lastSnapshot = this.snapshots.length > 0 ? this.snapshots[this.snapshots.length - 1] : null;
     if (lastSnapshot) {
       const baselineCached = this.baseline.cached_tokens ?? 0;

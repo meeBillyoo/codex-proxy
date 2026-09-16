@@ -11,7 +11,6 @@ import { GEMINI_STATUS_MAP } from "../types/gemini.js";
 import { GeminiGenerateContentRequestSchema } from "../types/gemini.js";
 import type { AccountPool } from "../auth/account-pool.js";
 import type { CookieJar } from "../proxy/cookie-jar.js";
-import type { ProxyPool } from "../proxy/proxy-pool.js";
 import {
   translateGeminiToCodexRequest,
 } from "../translation/gemini-to-codex.js";
@@ -66,7 +65,7 @@ const GEMINI_FORMAT: FormatAdapter = {
   formatNoAccount: () =>
     makeError(
       503,
-      "No available accounts. All accounts are expired or rate-limited.",
+      "The Codex CLI account is unavailable, expired, or rate-limited.",
       "UNAVAILABLE",
     ),
   format429: (msg) => makeError(429, msg, "RESOURCE_EXHAUSTED"),
@@ -80,7 +79,6 @@ const GEMINI_FORMAT: FormatAdapter = {
 export function createGeminiRoutes(
   accountPool: AccountPool,
   cookieJar?: CookieJar,
-  proxyPool?: ProxyPool,
 ): Hono {
   const app = new Hono();
 
@@ -157,7 +155,7 @@ export function createGeminiRoutes(
         && codexRequest.tools.some((tool) => isRecord(tool) && tool.type === "image_generation"),
     };
 
-    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: GEMINI_FORMAT, proxyPool });
+    return handleProxyRequest({ c, accountPool, cookieJar, req: proxyReq, fmt: GEMINI_FORMAT });
   });
 
   // List available models (Gemini format)

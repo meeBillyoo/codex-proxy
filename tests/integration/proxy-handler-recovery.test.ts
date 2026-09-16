@@ -412,7 +412,7 @@ describe("proxy-handler recovery & defense", () => {
     expect(seenPrevIds).toEqual(["resp_unanswered_chain"]);
   });
 
-  it("returns descriptive error when banned and remaining accounts disabled/expired", async () => {
+  it("returns the current account ban error", async () => {
     mockCreateResponse = () =>
       Promise.reject(new CodexApiError(403, '{"detail": "Account suspended"}'));
 
@@ -433,9 +433,6 @@ describe("proxy-handler recovery & defense", () => {
 
     const body = await res.json();
     expect(body.error).toBe("api_error");
-    expect(body.message).toContain("All accounts exhausted");
-    expect(body.message).toContain("1 expired");
-    expect(body.message).toContain("1 disabled");
-    expect(body.message).toContain("1 banned");
+    expect(body.message).toContain("Account suspended");
   });
 });

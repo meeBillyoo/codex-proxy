@@ -38,12 +38,9 @@ import {
 function createMockAccountPool(authenticated: boolean): AccountPool {
   return {
     isAuthenticated: vi.fn(() => authenticated),
-    getDistinctPlanAccounts: vi.fn(() =>
-      authenticated
-        ? [{ planType: "team", entryId: "e1", token: "t1", accountId: "a1" }]
-        : [],
-    ),
-    release: vi.fn(),
+    acquire: vi.fn(() => authenticated ? { entryId: "e1", token: "t1", accountId: "a1" } : null),
+    getEntry: vi.fn(() => authenticated ? { planType: "team" } : undefined),
+    releaseWithoutCounting: vi.fn(),
   } as unknown as AccountPool;
 }
 
@@ -81,12 +78,9 @@ describe("model-fetcher retry logic", () => {
     let authenticated = false;
     const pool = {
       isAuthenticated: vi.fn(() => authenticated),
-      getDistinctPlanAccounts: vi.fn(() =>
-        authenticated
-          ? [{ planType: "free", entryId: "e1", token: "t1", accountId: "a1" }]
-          : [],
-      ),
-      release: vi.fn(),
+      acquire: vi.fn(() => authenticated ? { entryId: "e1", token: "t1", accountId: "a1" } : null),
+      getEntry: vi.fn(() => authenticated ? { planType: "free" } : undefined),
+      releaseWithoutCounting: vi.fn(),
     } as unknown as AccountPool;
 
     mockGetModels.mockResolvedValue([{ slug: "gpt-5.4" }]);
@@ -129,6 +123,6 @@ describe("model-fetcher retry logic", () => {
     await vi.advanceTimersByTimeAsync(1_000);
 
     expect(hasFetchedModels()).toBe(true);
-    expect(pool.release).toHaveBeenCalledWith("e1");
+    expect(pool.releaseWithoutCounting).toHaveBeenCalledWith("e1");
   });
 });

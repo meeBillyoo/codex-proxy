@@ -87,7 +87,7 @@ export function TabBar({ activeHash }: { activeHash: string }) {
 
 function Dashboard() {
   const accounts = useAccounts();
-  const status = useStatus(accounts.list.length);
+  const status = useStatus();
   const update = useUpdateMessage();
   const { onLogout } = useDashboardAuthCtx();
   const [showModal, setShowModal] = useState(false);

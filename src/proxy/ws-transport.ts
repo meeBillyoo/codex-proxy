@@ -34,18 +34,18 @@ import {
 /**
  * Map an upstream WS terminal error frame (`type: "error"` or
  * `type: "response.failed"`) to an HTTP-equivalent status so that the
- * proxy-handler's existing CodexApiError rotation flow can take over.
+ * proxy-handler's existing CodexApiError flow can take over.
  *
- * Returns null for events we don't want to rotate on (genuine model
+ * Returns null for events we want to leave in the stream (genuine model
  * errors, validation errors, etc.) — those keep the SSE pass-through
  * behavior so the client sees the real reason.
  *
  * Why exact-match: a substring rule like `includes("rate_limit")` would
  * also match codes such as `soft_rate_limit_warning` and incorrectly
- * trigger account rotation. We allowlist concrete codes and fall through
+ * trigger account-state handling. We allowlist concrete codes and fall through
  * for everything else (unknown codes stream as SSE — safer default).
  */
-const ROTATABLE_ERROR_CODES: Readonly<Record<string, number>> = {
+const TERMINAL_ERROR_CODES: Readonly<Record<string, number>> = {
   // 429 — weekly/primary cap
   usage_limit_reached: 429,
   rate_limit_exceeded: 429,
@@ -82,7 +82,7 @@ function classifyWsErrorEvent(msg: Record<string, unknown>): { status: number } 
     (typeof errorObj.code === "string" ? errorObj.code : null) ??
     (typeof errorObj.type === "string" ? errorObj.type : null) ??
     "";
-  const status = ROTATABLE_ERROR_CODES[codeRaw.toLowerCase()];
+  const status = TERMINAL_ERROR_CODES[codeRaw.toLowerCase()];
   return status ? { status } : null;
 }
 

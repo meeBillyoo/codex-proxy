@@ -126,7 +126,7 @@ afterAll(() => {
 });
 
 describe("GET /health", () => {
-  it("returns pool capacity without removing existing pool fields", async () => {
+  it("returns the current account and concurrency capacity", async () => {
     const acquired = pool.acquire({});
     expect(acquired).not.toBeNull();
 
@@ -134,9 +134,8 @@ describe("GET /health", () => {
     expect(res.status).toBe(200);
     const body = await res.json() as {
       authenticated: boolean;
-      pool: {
-        total: number;
-        active: number;
+      account: { available: boolean; status: string | null };
+      concurrency: {
         max_concurrent_per_account: number;
         total_slots: number;
         used_slots: number;
@@ -145,12 +144,12 @@ describe("GET /health", () => {
     };
 
     expect(body.authenticated).toBe(true);
-    expect(body.pool.total).toBe(1);
-    expect(body.pool.active).toBe(1);
-    expect(body.pool.max_concurrent_per_account).toBe(3);
-    expect(body.pool.total_slots).toBe(3);
-    expect(body.pool.used_slots).toBe(1);
-    expect(body.pool.available_slots).toBe(2);
+    expect(body.account.available).toBe(true);
+    expect(body.account.status).toBe("active");
+    expect(body.concurrency.max_concurrent_per_account).toBe(3);
+    expect(body.concurrency.total_slots).toBe(3);
+    expect(body.concurrency.used_slots).toBe(1);
+    expect(body.concurrency.available_slots).toBe(2);
   });
 });
 
@@ -191,14 +190,14 @@ describe("GET /debug/diagnostics", () => {
     expect(res.status).toBe(200);
     const body = await res.json() as {
       transport: { type: string; initialized: boolean; impersonate: boolean };
-      accounts: { total: number };
+      account: { available: boolean };
       paths: { bin: string; config: string; data: string };
       runtime: { platform: string; node_version: string };
     };
     expect(body.transport.type).toBe("native");
     expect(body.transport.initialized).toBe(true);
     expect(body.transport.impersonate).toBe(false);
-    expect(typeof body.accounts.total).toBe("number");
+    expect(body.account.available).toBe(true);
     expect(body.paths.bin).toBe("/tmp/codex-e2e-debug/bin");
     expect(body.runtime.node_version).toContain("v");
   });
