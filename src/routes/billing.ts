@@ -28,7 +28,9 @@ function effectiveUsedPercent(quota: CodexQuota | undefined): number {
 
   const primary = boundedPercent(quota.rate_limit.used_percent);
   const secondary = boundedPercent(quota.secondary_rate_limit?.used_percent);
-  return Math.max(primary ?? 0, secondary ?? 0);
+  // Virtual limits are weekly, so prefer the weekly window. Older upstream
+  // responses may omit it; in that case the primary window is the fallback.
+  return secondary ?? primary ?? 0;
 }
 
 function isIncludedAccount(account: AccountInfo): boolean {

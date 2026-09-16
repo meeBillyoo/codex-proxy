@@ -63,8 +63,8 @@ describe("OpenAI-compatible billing routes", () => {
     });
   });
 
-  it("reports Plus as 140 and usage in cents using the limiting quota window", async () => {
-    addAccount("plus", quota("plus", 20, 35));
+  it("reports Plus as 140 and usage in cents using the weekly quota window", async () => {
+    addAccount("plus", quota("plus", 80, 35));
     const app = createBillingRoutes(pool);
     const headers = { Authorization: "Bearer billing-secret" };
 
