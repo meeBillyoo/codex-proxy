@@ -2,15 +2,9 @@ import { useState, useCallback, useRef, useEffect } from "preact/hooks";
 import { useT } from "../../../shared/i18n/context";
 import { useGeneralSettings, type SystemPromptStrategy } from "../../../shared/hooks/use-general-settings";
 import { useSettings } from "../../../shared/hooks/use-settings";
-import { getLayoutMode, saveLayoutMode, type LayoutMode } from "../lib/layout-preferences";
 import { SettingItemControl } from "./settings/SettingItemControl";
 
-interface GeneralSettingsProps {
-  layoutMode?: LayoutMode;
-  onLayoutModeChange?: (mode: LayoutMode) => void;
-}
-
-export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSettingsProps = {}) {
+export function GeneralSettings() {
   const t = useT();
   const settings = useSettings();
   const gs = useGeneralSettings(settings.apiKey);
@@ -32,7 +26,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
   const [draftAutoDownload, setDraftAutoDownload] = useState<boolean | null>(null);
   const [draftShowUpdateDialog, setDraftShowUpdateDialog] = useState<boolean | null>(null);
   const [draftAllowPrerelease, setDraftAllowPrerelease] = useState<boolean | null>(null);
-  const [localLayoutMode, setLocalLayoutMode] = useState<LayoutMode>(() => getLayoutMode());
   const [collapsed, setCollapsed] = useState(true);
 
   // Field-level saving / saved states. savingFields is keyed by field name so
@@ -85,20 +78,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
   const displayAutoDownload = draftAutoDownload ?? currentAutoDownload;
   const displayShowUpdateDialog = draftShowUpdateDialog ?? currentShowUpdateDialog;
   const displayAllowPrerelease = draftAllowPrerelease ?? currentAllowPrerelease;
-  const displayLayoutMode = layoutMode ?? localLayoutMode;
-
-  const handleLayoutModeChange = (mode: LayoutMode) => {
-    setLocalLayoutMode(mode);
-    saveLayoutMode(mode);
-    onLayoutModeChange?.(mode);
-    setSavedFields((prev) => ({ ...prev, layoutMode: true }));
-    setTimeout(() => {
-      // Reset after the badge fades so the next change re-triggers it.
-      if (mountedRef.current) {
-        setSavedFields((prev) => ({ ...prev, layoutMode: false }));
-      }
-    }, 2000);
-  };
 
   const saveSingleField = useCallback(async (fieldName: string, patch: Record<string, unknown>, resetDraft: () => void) => {
     setSavingFields((prev) => ({ ...prev, [fieldName]: true }));
@@ -594,6 +573,8 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
         </div>
       </section>
 
+      {false && <>
+      {/* Dashboard preferences are intentionally omitted in the server-only build. */}
       {/* 4. Dashboard Preferences */}
       <section class="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl shadow-sm overflow-hidden transition-colors">
         <button
@@ -735,6 +716,7 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
           </div>
         )}
       </section>
+      </>}
     </div>
   );
 }

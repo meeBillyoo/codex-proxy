@@ -37,6 +37,23 @@ Anthropic 和 Gemini 客户端也可分别使用 `x-api-key`、`x-goog-api-key`�
 
 本服务没有登录、退出、导入、删除、轮换或 token 刷新接口。请在运行服务的同一系统用户下使用 `codex login` / `codex logout`。
 
+## Codex App Server 会话接口
+
+启用 `official_agent.enabled` 后，可通过以下接口管理多个独立对话。不同 session 可以并行执行，同一个 session 内的 turn 仍按顺序执行。
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| POST | `/official-agent/sessions` | 创建 session，并返回 `sessionId` 与上游 `threadId` |
+| GET | `/official-agent/sessions` | 列出当前进程维护的 session |
+| GET | `/official-agent/sessions/:sessionId` | 查询 session 状态和当前 turn |
+| DELETE | `/official-agent/sessions/:sessionId` | 中断运行中的 turn、归档上游 thread 并删除本地 session |
+| POST | `/official-agent/sessions/:sessionId/turns` | 在指定 session 中发起 SSE turn |
+| POST | `/official-agent/sessions/:sessionId/turns/:turnId/cancel` | 中断指定的运行中 turn |
+
+所有接口都需要 `Authorization: Bearer <PROXY_API_KEY>`。session 是进程内状态，服务重启后需要重新创建。
+
+默认最多保留 50 个 session（`official_agent.max_sessions`）。session 连续 24 小时无活动后会自动归档上游 thread 并清理（`official_agent.session_idle_ttl_hours`）；运行中的 turn 不会被中途清理。若取消请求到达时上游 `turnId` 尚未返回，接口返回 HTTP 202，拿到 `turnId` 后会自动发送中断。SSE 客户端断开也会自动请求取消上游 turn。如果 App Server 不支持 `thread/archive`，本地 session 仍会清理，删除响应中的 `archived` 会为 `false`。
+
 ## Dashboard 与运维
 
 | 方法 | 路径 | 说明 |

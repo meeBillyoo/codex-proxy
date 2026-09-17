@@ -1,6 +1,6 @@
 {
   "name": "codex-proxy",
-  "version": "2.1.8",
+  "version": "2.1.9",
   "description": "Single-account reverse proxy that exposes the Codex CLI Responses API through OpenAI-compatible protocols",
   "type": "module",
   "engines": {

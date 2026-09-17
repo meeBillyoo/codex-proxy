@@ -205,6 +205,9 @@ export const ConfigSchema = z.object({
       message: "app_server_url must be a ws:// or wss:// URL",
     }).default("ws://127.0.0.1:4500"),
     request_timeout_ms: z.number().int().min(1000).max(300000).default(30000),
+    max_sessions: z.number().int().positive().default(50),
+    session_idle_ttl_hours: z.number().positive().default(24),
+    session_cleanup_interval_minutes: z.number().positive().default(10),
     auth: OfficialAgentAuthSchema.default({ type: "none" }),
   }).default({}),
 });

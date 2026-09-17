@@ -61,8 +61,10 @@ export type CodexAppTurnStreamEvent =
 export interface CodexAppServerBridge {
   listApps(params?: ListAppsParams): Promise<unknown>;
   startThread(params: StartThreadParams): Promise<unknown>;
+  archiveThread(threadId: string): Promise<unknown>;
   startTurn(params: StartTurnParams): Promise<unknown>;
-  notificationsUntilTurnCompleted(): AsyncIterable<CodexAppNotification>;
+  interruptTurn(threadId: string, turnId: string): Promise<unknown>;
+  notificationsUntilTurnCompleted(threadId: string): AsyncIterable<CodexAppNotification>;
   runTurn(params: StartTurnParams): AsyncIterable<CodexAppTurnStreamEvent>;
   close(): Promise<void>;
 }

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 import { Hono } from "hono";
 import { getConfig } from "../config.js";
 import { CodexAppServerClient } from "../codex-app-server/client.js";
@@ -13,6 +13,28 @@ import type {
 type BridgeFactory = () => CodexAppServerBridge;
 
 let sharedBridge: CodexAppServerBridge | null = null;
+
+type SessionStatus = "idle" | "running" | "closed";
+
+interface OfficialAgentSession {
+  sessionId: string;
+  threadId: string;
+  status: SessionStatus;
+  model: string | null;
+  cwd: string | null;
+  createdAt: string;
+  lastActivityAt: string;
+  currentTurnId: string | null;
+  upstreamTurnId: string | null;
+  cancelRequested: boolean;
+  cancelSent: boolean;
+  archivedAt: string | null;
+  lastError: string | null;
+}
+
+const sessions = new Map<string, OfficialAgentSession>();
+let sessionCleanupTimer: NodeJS.Timeout | null = null;
+let sessionCleanupBridgeFactory: BridgeFactory | null = null;
 
 function getSharedBridge(): CodexAppServerBridge {
   if (sharedBridge) return sharedBridge;
@@ -98,6 +120,60 @@ function encodeSse(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+function extractString(value: unknown, keys: string[]): string | null {
+  if (!isRecord(value)) return null;
+  for (const key of keys) {
+    if (typeof value[key] === "string") return value[key];
+  }
+  for (const nestedKey of ["thread", "turn", "result", "data"]) {
+    const nested = extractString(value[nestedKey], keys);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+async function cancelRunningTurn(session: OfficialAgentSession, bridge: CodexAppServerBridge): Promise<"sent" | "pending" | "ignored"> {
+  if (session.status !== "running" || !session.currentTurnId) return "ignored";
+  session.cancelRequested = true;
+  session.lastActivityAt = new Date().toISOString();
+  if (!session.upstreamTurnId) return "pending";
+  if (session.cancelSent) return "sent";
+  await bridge.interruptTurn(session.threadId, session.upstreamTurnId);
+  session.cancelSent = true;
+  return "sent";
+}
+
+async function disposeSession(session: OfficialAgentSession, bridge: CodexAppServerBridge, reason: "delete" | "ttl") {
+  let interrupted = false;
+  if (session.status === "running") {
+    try { interrupted = (await cancelRunningTurn(session, bridge)) === "sent"; }
+    catch (error) { session.lastError = error instanceof Error ? error.message : String(error); }
+  }
+  let archived = false;
+  let archiveError: string | undefined;
+  try {
+    await bridge.archiveThread(session.threadId);
+    archived = true;
+    session.archivedAt = new Date().toISOString();
+  } catch (error) {
+    archiveError = error instanceof Error ? error.message : String(error);
+    session.lastError = archiveError;
+    console.warn(`[official-agent] Failed to archive thread during ${reason}: ${archiveError}`);
+  }
+  session.status = "closed";
+  sessions.delete(session.sessionId);
+  return { interrupted, archived, ...(archiveError ? { archiveError } : {}) };
+}
+
+async function cleanupExpiredSessions(bridgeFactory: BridgeFactory): Promise<void> {
+  const config = getConfig();
+  const cutoff = Date.now() - config.official_agent.session_idle_ttl_hours * 60 * 60 * 1000;
+  for (const session of [...sessions.values()]) {
+    if (session.status === "running" || Date.parse(session.lastActivityAt) > cutoff) continue;
+    await disposeSession(session, bridgeFactory(), "ttl");
+  }
+}
+
 async function* turnEventStream(
   bridge: CodexAppServerBridge,
   params: StartTurnParams,
@@ -113,6 +189,13 @@ async function* turnEventStream(
 
 export function createOfficialAgentRoutes(bridgeFactory: BridgeFactory = getSharedBridge): Hono {
   const app = new Hono();
+  sessionCleanupBridgeFactory = bridgeFactory;
+  if (!sessionCleanupTimer) {
+    sessionCleanupTimer = setInterval(() => {
+      if (sessionCleanupBridgeFactory) void cleanupExpiredSessions(sessionCleanupBridgeFactory);
+    }, getConfig().official_agent.session_cleanup_interval_minutes * 60 * 1000);
+    sessionCleanupTimer.unref?.();
+  }
 
   app.use("/official-agent/*", async (c, next) => {
     const config = getConfig();
@@ -130,6 +213,153 @@ export function createOfficialAgentRoutes(bridgeFactory: BridgeFactory = getShar
       return c.json(errorBody("invalid_api_key", "Invalid official-agent API key"));
     }
     await next();
+  });
+
+  app.post("/official-agent/sessions", async (c) => {
+    const config = getConfig();
+    if (sessions.size >= config.official_agent.max_sessions) {
+      c.header("Retry-After", "60");
+      c.status(429);
+      return c.json(errorBody("session_limit_reached", "Maximum number of sessions reached"));
+    }
+    let body: unknown = {};
+    try { body = await c.req.json(); } catch { /* empty body is valid */ }
+    const params = parseStartThread(body);
+    const result = await bridgeFactory().startThread(params);
+    const threadId = extractString(result, ["threadId", "id"]);
+    if (!threadId) {
+      c.status(502);
+      return c.json(errorBody("invalid_app_server_response", "App Server did not return a thread id"));
+    }
+    const now = new Date().toISOString();
+    const session: OfficialAgentSession = {
+      sessionId: randomUUID(),
+      threadId,
+      status: "idle",
+      model: params.model ?? null,
+      cwd: params.cwd ?? null,
+      createdAt: now,
+      lastActivityAt: now,
+      currentTurnId: null,
+      upstreamTurnId: null,
+      cancelRequested: false,
+      cancelSent: false,
+      archivedAt: null,
+      lastError: null,
+    };
+    sessions.set(session.sessionId, session);
+    return c.json(session, 201);
+  });
+
+  app.get("/official-agent/sessions", (c) => c.json({ data: [...sessions.values()] }));
+
+  app.get("/official-agent/sessions/:sessionId", (c) => {
+    const session = sessions.get(c.req.param("sessionId"));
+    if (!session) {
+      c.status(404);
+      return c.json(errorBody("session_not_found", "Session not found"));
+    }
+    return c.json(session);
+  });
+
+  app.delete("/official-agent/sessions/:sessionId", async (c) => {
+    const session = sessions.get(c.req.param("sessionId"));
+    if (!session) {
+      c.status(404);
+      return c.json(errorBody("session_not_found", "Session not found"));
+    }
+    const result = await disposeSession(session, bridgeFactory(), "delete");
+    return c.json({ deleted: true, sessionId: session.sessionId, threadId: session.threadId, ...result });
+  });
+
+  app.post("/official-agent/sessions/:sessionId/turns", async (c) => {
+    const session = sessions.get(c.req.param("sessionId"));
+    if (!session) {
+      c.status(404);
+      return c.json(errorBody("session_not_found", "Session not found"));
+    }
+    if (session.status === "running") {
+      c.status(409);
+      return c.json(errorBody("session_busy", "This session already has a running turn"));
+    }
+    let body: unknown;
+    try { body = await c.req.json(); } catch {
+      c.status(400);
+      return c.json(errorBody("invalid_json", "Malformed JSON request body"));
+    }
+    const parsed = parseStartTurn(session.threadId, body);
+    if (!parsed.ok) {
+      c.status(400);
+      return c.json(errorBody("invalid_request", parsed.message));
+    }
+
+    const localTurnId = randomUUID();
+    session.status = "running";
+    session.currentTurnId = localTurnId;
+    session.upstreamTurnId = null;
+    session.cancelRequested = false;
+    session.cancelSent = false;
+    session.lastError = null;
+    session.lastActivityAt = new Date().toISOString();
+    let streamCancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const encoder = new TextEncoder();
+        try {
+          for await (const event of bridgeFactory().runTurn(parsed.params)) {
+            if (event.type === "result") {
+              session.upstreamTurnId = extractString(event.result, ["turnId", "id"]);
+              if (session.cancelRequested && session.upstreamTurnId && !session.cancelSent) {
+                try {
+                  await bridgeFactory().interruptTurn(session.threadId, session.upstreamTurnId);
+                  session.cancelSent = true;
+                } catch (error) { session.lastError = error instanceof Error ? error.message : String(error); }
+              }
+              if (!streamCancelled) controller.enqueue(encoder.encode(encodeSse("official_agent.result", { turnId: localTurnId, result: event.result })));
+            } else {
+              session.lastActivityAt = new Date().toISOString();
+              if (!streamCancelled) controller.enqueue(encoder.encode(encodeSse(event.notification.method, event.notification)));
+            }
+          }
+          if (!streamCancelled) controller.close();
+        } catch (error) {
+          session.lastError = error instanceof Error ? error.message : String(error);
+          if (!streamCancelled) {
+            controller.enqueue(encoder.encode(encodeSse("official_agent.error", errorBody("app_server_error", session.lastError))));
+            controller.close();
+          }
+        } finally {
+          if (sessions.get(session.sessionId) === session) {
+            session.status = "idle";
+            session.currentTurnId = null;
+            session.upstreamTurnId = null;
+            session.cancelRequested = false;
+            session.cancelSent = false;
+            session.lastActivityAt = new Date().toISOString();
+          }
+        }
+      },
+      async cancel() {
+        streamCancelled = true;
+        await cancelRunningTurn(session, bridgeFactory());
+      },
+    });
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream; charset=utf-8", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  });
+
+  app.post("/official-agent/sessions/:sessionId/turns/:turnId/cancel", async (c) => {
+    const session = sessions.get(c.req.param("sessionId"));
+    if (!session) {
+      c.status(404);
+      return c.json(errorBody("session_not_found", "Session not found"));
+    }
+    const turnId = c.req.param("turnId");
+    if (session.status !== "running" || session.currentTurnId !== turnId) {
+      c.status(404);
+      return c.json(errorBody("turn_not_found", "Running turn not found"));
+    }
+    const result = await cancelRunningTurn(session, bridgeFactory());
+    return c.json({ cancelled: result === "sent", pending: result === "pending", sessionId: session.sessionId, turnId }, result === "pending" ? 202 : 200);
   });
 
   app.get("/official-agent/apps", async (c) => {

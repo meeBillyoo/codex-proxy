@@ -20,7 +20,7 @@ import { useUpdateStatus } from "../../shared/hooks/use-update-status";
 import { useI18n, useT } from "../../shared/i18n/context";
 import { useDashboardAuth } from "../../shared/hooks/use-dashboard-auth";
 import { getShowUpdateDialogPreference, shouldAutoOpenUpdateModal } from "./update-modal-policy";
-import { getLayoutMode, saveLayoutMode, type LayoutMode } from "./lib/layout-preferences";
+import { getLayoutMode, type LayoutMode } from "./lib/layout-preferences";
 import { NAV_ITEMS } from "./navigation";
 
 export { shouldAutoOpenUpdateModal };
@@ -96,11 +96,6 @@ function Dashboard() {
   const errorCount = useErrorLogsCount();
   const [layoutMode, setLayoutMode] = useState<LayoutMode>(() => getLayoutMode());
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  const handleLayoutModeChange = (mode: LayoutMode) => {
-    setLayoutMode(mode);
-    saveLayoutMode(mode);
-  };
 
   useEffect(() => {
     if (shouldAutoOpenUpdateModal({
@@ -188,8 +183,6 @@ function Dashboard() {
           {activeTab === "#/settings" && (
             <SettingsTab
               models={status.models}
-              layoutMode={layoutMode}
-              onLayoutModeChange={handleLayoutModeChange}
             />
           )}
         </div>

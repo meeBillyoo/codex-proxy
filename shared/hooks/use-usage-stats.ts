@@ -79,7 +79,9 @@ export function useUsageHistory(granularity: Granularity, hours: UsageHistoryRan
       );
       if (resp.ok) {
         const body = await resp.json();
-        setDataPoints(body.data_points);
+        // Keep chart consumers safe when an older server, proxy, or auth
+        // failure returns a malformed payload instead of the history array.
+        setDataPoints(Array.isArray(body?.data_points) ? body.data_points : []);
       }
     } catch { /* network error / timeout / abort — fall through */ }
     finally { setLoading(false); }
