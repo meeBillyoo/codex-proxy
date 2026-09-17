@@ -16,6 +16,16 @@ export interface ModelFamily {
   defaultEffort: string;
 }
 
+export interface ServerRuntime {
+  node_version: string;
+  platform: string;
+  arch: string;
+  cpu_count: number;
+  load_average: number[];
+  memory_total_bytes: number;
+  memory_free_bytes: number;
+}
+
 /**
  * Extract model family ID from a model ID.
  * gpt-5.3-codex-high → gpt-5.3-codex
@@ -62,6 +72,8 @@ export function useStatus() {
   const [selectedEffort, setSelectedEffort] = useState("medium");
   const [selectedSpeed, setSelectedSpeed] = useState<string | null>(null);
   const [uptimeSeconds, setUptimeSeconds] = useState<number | null>(null);
+  const [runtime, setRuntime] = useState<ServerRuntime | null>(null);
+  const [codexCliVersion, setCodexCliVersion] = useState<string | null>(null);
 
   const fetchModels = useCallback(async (isInitial: boolean) => {
     try {
@@ -102,10 +114,12 @@ export function useStatus() {
         setBaseUrl(`${window.location.origin}/v1`);
         const healthResp = await fetch("/health");
         if (healthResp.ok) {
-          const healthData = await healthResp.json() as { uptime_seconds?: unknown };
+          const healthData = await healthResp.json() as { uptime_seconds?: unknown; runtime?: ServerRuntime; codex_cli?: { version?: string | null } };
           if (typeof healthData.uptime_seconds === "number" && Number.isFinite(healthData.uptime_seconds)) {
             setUptimeSeconds(Math.max(0, Math.floor(healthData.uptime_seconds)));
           }
+          if (healthData.runtime) setRuntime(healthData.runtime);
+          setCodexCliVersion(healthData.codex_cli?.version ?? null);
         }
         const isInitial = isInitialRef.current;
         isInitialRef.current = false;
@@ -156,6 +170,8 @@ export function useStatus() {
     selectedSpeed,
     setSelectedSpeed,
     uptimeSeconds,
+    runtime,
+    codexCliVersion,
     modelFamilies,
     modelCatalog,
   };

@@ -1,5 +1,6 @@
 import type { Account } from "../../../shared/types";
 import { useT } from "../../../shared/i18n/context";
+import type { ServerRuntime } from "../../../shared/hooks/use-status";
 
 interface CodexAccountCardProps {
   account: Account | null;
@@ -9,10 +10,21 @@ interface CodexAccountCardProps {
   error: string | null;
   lastUpdated: Date | null;
   onReload: () => Promise<boolean>;
+  runtime?: ServerRuntime | null;
+  codexCliVersion?: string | null;
 }
 
 function formatNumber(value: number | undefined): string {
   return new Intl.NumberFormat().format(value ?? 0);
+}
+
+function formatBytes(value: number | undefined): string {
+  if (!value || !Number.isFinite(value)) return "—";
+  const units = ["B", "GB", "TB"];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit++; }
+  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
 }
 
 export function CodexAccountCard(props: CodexAccountCardProps) {
@@ -40,9 +52,15 @@ export function CodexAccountCard(props: CodexAccountCardProps) {
         </button>
       </div>
 
-      <div class="mt-5 rounded-xl bg-slate-50 p-4 dark:bg-bg-dark">
+      <div class="mt-5 grid gap-3 sm:grid-cols-2">
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-bg-dark">
         <div class="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">{t("authFile")}</div>
         <code class="mt-1 block break-all text-xs text-slate-700 dark:text-text-main">{props.authFile || "~/.codex/auth.json"}</code>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-4 dark:bg-bg-dark">
+          <div class="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">{t("codexCliVersion")}</div>
+          <code class="mt-1 block text-sm font-semibold text-slate-700 dark:text-text-main">{props.codexCliVersion ?? "—"}</code>
+        </div>
       </div>
 
       {props.loading ? (
@@ -78,6 +96,12 @@ export function CodexAccountCard(props: CodexAccountCardProps) {
             <span>{t("accountId")}: <code class="text-slate-700 dark:text-text-main">{account.accountId ?? "—"}</code></span>
             {account.expiresAt && <span>{t("expires")}: <strong class="text-slate-700 dark:text-text-main">{new Date(account.expiresAt).toLocaleString()}</strong></span>}
             {props.lastUpdated && <span>{t("updatedAt")}: {props.lastUpdated.toLocaleTimeString()}</span>}
+          </div>
+          <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("serverPlatform")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime ? `${props.runtime.platform} / ${props.runtime.arch}` : "—"}</div></div>
+            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("serverCpuLoad")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime ? `${props.runtime.cpu_count} · ${props.runtime.load_average[0]?.toFixed(2) ?? "—"}` : "—"}</div></div>
+            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("serverMemory")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime ? `${formatBytes(props.runtime.memory_total_bytes - props.runtime.memory_free_bytes)} / ${formatBytes(props.runtime.memory_total_bytes)}` : "—"}</div></div>
+            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("nodeVersion")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime?.node_version ?? "—"}</div></div>
           </div>
         </>
       )}

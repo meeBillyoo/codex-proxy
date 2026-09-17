@@ -508,7 +508,7 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
         </div>
       </section>
 
-      {/* 3. Account Routing & Token Refresh */}
+      {/* 3. Request & Usage */}
       <section class="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl shadow-sm overflow-hidden transition-colors">
         <div class="px-5 py-4 border-b border-gray-100 dark:border-border-dark flex items-center justify-between">
           <div class="flex items-center gap-2.5">
@@ -517,7 +517,7 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
                 <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.992 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M20.985 4.356v4.992" />
               </svg>
             </div>
-            <h2 class="text-sm font-bold text-slate-800 dark:text-text-main">{t("settingsCategoryRouting")}</h2>
+            <h2 class="text-sm font-bold text-slate-800 dark:text-text-main">{t("settingsCategoryRequestUsage")}</h2>
           </div>
         </div>
 
@@ -594,7 +594,7 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
         </div>
       </section>
 
-      {/* 4. App Preferences & Updates */}
+      {/* 4. Dashboard Preferences */}
       <section class="bg-white dark:bg-card-dark border border-gray-200 dark:border-border-dark rounded-xl shadow-sm overflow-hidden transition-colors">
         <button
           onClick={() => setCollapsed(!collapsed)}
@@ -632,7 +632,8 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
               </select>
             </SettingItemControl>
 
-            {/* Auto Update */}
+            {false && <>
+            {/* Update preferences are intentionally unavailable in the server-only build. */}
             <SettingItemControl
               label={t("generalSettingsAutoUpdate")}
               hint={t("generalSettingsAutoUpdateHint")}
@@ -655,7 +656,6 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
                 {t("generalSettingsAutoUpdate")}
               </label>
             </SettingItemControl>
-
             {/* Auto Download */}
             <SettingItemControl
               label={t("generalSettingsAutoDownload")}
@@ -731,6 +731,7 @@ export function GeneralSettings({ layoutMode, onLayoutModeChange }: GeneralSetti
                 {t("generalSettingsShowUpdateDialog")}
               </label>
             </SettingItemControl>
+            </>}
           </div>
         )}
       </section>

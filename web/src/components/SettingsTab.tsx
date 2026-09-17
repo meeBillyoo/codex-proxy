@@ -1,7 +1,6 @@
 import { GeneralSettings } from "./GeneralSettings";
 import { LogsSettings } from "./LogsSettings";
 import { ModelAliasSettings } from "./ModelAliasSettings";
-import { OllamaBridgeSettings } from "./OllamaBridgeSettings";
 import { QuotaSettings } from "./QuotaSettings";
 import type { LayoutMode } from "../lib/layout-preferences";
 
@@ -18,7 +17,6 @@ export function SettingsTab(props: SettingsTabProps) {
       <ModelAliasSettings models={props.models} />
       <QuotaSettings />
       <LogsSettings />
-      <OllamaBridgeSettings />
     </div>
   );
 }

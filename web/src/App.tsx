@@ -152,6 +152,8 @@ function Dashboard() {
                 lastUpdated={accounts.lastUpdated}
                 error={accounts.error}
                 onReload={accounts.reload}
+                runtime={status.runtime}
+                codexCliVersion={status.codexCliVersion}
               />
             </div>
           )}

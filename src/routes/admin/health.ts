@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
 import { existsSync, readFileSync } from "fs";
+import os from "os";
+import { execFileSync } from "child_process";
 import { resolve } from "path";
 import type { AccountPool } from "../../auth/account-pool.js";
 import { getConfig, getFingerprint } from "../../config.js";
@@ -11,6 +13,14 @@ import { isLocalhostRequest } from "../../utils/is-localhost.js";
 
 export function createHealthRoutes(accountPool: AccountPool): Hono {
   const app = new Hono();
+
+  const cliVersion = (() => {
+    try {
+      return execFileSync("codex", ["--version"], { encoding: "utf8", timeout: 2000 }).trim() || null;
+    } catch {
+      return null;
+    }
+  })();
 
   app.get("/health", async (c) => {
     const authenticated = accountPool.isAuthenticated();
@@ -29,6 +39,16 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
         ...capacitySummary,
       },
       uptime_seconds: Math.floor(process.uptime()),
+      runtime: {
+        node_version: process.version,
+        platform: process.platform,
+        arch: process.arch,
+        cpu_count: os.cpus().length,
+        load_average: os.loadavg(),
+        memory_total_bytes: os.totalmem(),
+        memory_free_bytes: os.freemem(),
+      },
+      codex_cli: { version: cliVersion },
       timestamp: new Date().toISOString(),
     });
   });
