@@ -17,6 +17,9 @@ export interface ModelFamily {
 }
 
 export interface ServerRuntime {
+  server_name?: string | null;
+  server_ip?: string | null;
+  system?: string | null;
   node_version: string;
   platform: string;
   arch: string;
@@ -24,6 +27,9 @@ export interface ServerRuntime {
   load_average: number[];
   memory_total_bytes: number;
   memory_free_bytes: number;
+  disk_total_bytes?: number;
+  disk_free_bytes?: number;
+  process_count?: number;
 }
 
 /**
