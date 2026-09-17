@@ -43,4 +43,6 @@ All endpoints require `Authorization: Bearer <PROXY_API_KEY>`. Sessions are held
 
 The default limit is 50 sessions (`official_agent.max_sessions`). Idle sessions are automatically archived and removed after 24 hours without activity (`official_agent.session_idle_ttl_hours`); running sessions are never removed mid-turn. A cancel request received before the upstream `turnId` is known is acknowledged with HTTP 202 and applied as soon as `turn/start` returns. Disconnecting an SSE client also requests cancellation of the upstream turn. If the App Server does not implement `thread/archive`, local cleanup still completes and the delete response reports `archived: false`.
 
+The turn stream first emits `official_agent.turn_started` with the local `sessionId` and `turnId`. Use that local `turnId` with the cancel endpoint; the later `official_agent.result` event contains the App Server's upstream result.
+
 The service never returns Codex tokens or `PROXY_API_KEY` in API responses.

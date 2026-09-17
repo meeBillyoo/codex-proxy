@@ -54,6 +54,8 @@ Anthropic 和 Gemini 客户端也可分别使用 `x-api-key`、`x-goog-api-key`�
 
 默认最多保留 50 个 session（`official_agent.max_sessions`）。session 连续 24 小时无活动后会自动归档上游 thread 并清理（`official_agent.session_idle_ttl_hours`）；运行中的 turn 不会被中途清理。若取消请求到达时上游 `turnId` 尚未返回，接口返回 HTTP 202，拿到 `turnId` 后会自动发送中断。SSE 客户端断开也会自动请求取消上游 turn。如果 App Server 不支持 `thread/archive`，本地 session 仍会清理，删除响应中的 `archived` 会为 `false`。
 
+turn 的 SSE 流首先发送 `official_agent.turn_started`，其中包含本地 `sessionId` 和 `turnId`。取消接口使用这个本地 `turnId`；后续 `official_agent.result` 事件则包含 App Server 返回的上游结果。
+
 ## Dashboard 与运维
 
 | 方法 | 路径 | 说明 |

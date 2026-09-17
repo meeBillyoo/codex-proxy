@@ -306,6 +306,10 @@ export function createOfficialAgentRoutes(bridgeFactory: BridgeFactory = getShar
       async start(controller) {
         const encoder = new TextEncoder();
         try {
+          controller.enqueue(encoder.encode(encodeSse("official_agent.turn_started", {
+            sessionId: session.sessionId,
+            turnId: localTurnId,
+          })));
           for await (const event of bridgeFactory().runTurn(parsed.params)) {
             if (event.type === "result") {
               session.upstreamTurnId = extractString(event.result, ["turnId", "id"]);

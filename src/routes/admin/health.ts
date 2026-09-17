@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync, statfsSync } from "fs";
 import os from "os";
 import { execFileSync } from "child_process";
 import { resolve } from "path";
@@ -26,6 +26,19 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
     const authenticated = accountPool.isAuthenticated();
     const account = accountPool.getAccount();
     const capacitySummary = accountPool.getCapacitySummary();
+    const interfaces = os.networkInterfaces();
+    const serverIp = Object.values(interfaces)
+      .flatMap((entries) => entries ?? [])
+      .find((entry) => entry.family === "IPv4" && !entry.internal)?.address ?? null;
+    let disk = { total_bytes: 0, free_bytes: 0 };
+    try {
+      const stats = statfsSync(getDataDir());
+      disk = { total_bytes: Number(stats.blocks) * Number(stats.bsize), free_bytes: Number(stats.bavail) * Number(stats.bsize) };
+    } catch {}
+    let processCount = 1;
+    try {
+      processCount = execFileSync("ps", ["-e", "-o", "pid="], { encoding: "utf8", timeout: 1000 }).trim().split("\n").filter(Boolean).length || 1;
+    } catch {}
     return c.json({
       status: "ok",
       authenticated,
@@ -40,6 +53,9 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
       },
       uptime_seconds: Math.floor(process.uptime()),
       runtime: {
+        server_name: os.hostname(),
+        server_ip: serverIp,
+        system: `${os.platform()} ${os.release()}`,
         node_version: process.version,
         platform: process.platform,
         arch: process.arch,
@@ -47,6 +63,9 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
         load_average: os.loadavg(),
         memory_total_bytes: os.totalmem(),
         memory_free_bytes: os.freemem(),
+        disk_total_bytes: disk.total_bytes,
+        disk_free_bytes: disk.free_bytes,
+        process_count: processCount,
       },
       codex_cli: { version: cliVersion },
       timestamp: new Date().toISOString(),
