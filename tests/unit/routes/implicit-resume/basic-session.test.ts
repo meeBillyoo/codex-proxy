@@ -33,6 +33,7 @@ describe("Implicit Resume — Basic Session & Key Derivation", () => {
 
     let captured = getCapturedCodexRequest();
     expect(captured.previous_response_id).toBeUndefined(); // First turn, no implicit resume
+    expect(captured.useWebSocket).toBe(true);
     const derivedKeyT1 = captured.prompt_cache_key;
     expect(derivedKeyT1).toBeDefined();
 
@@ -56,6 +57,30 @@ describe("Implicit Resume — Basic Session & Key Derivation", () => {
     captured = getCapturedCodexRequest();
     expect(captured.previous_response_id).toBe("resp-1");
     expect(captured.input).toEqual([{ role: "user", content: "Hello again" }]);
+  });
+
+  it("keeps full Chat Completions input on HTTP when upstream WebSocket is disabled", async () => {
+    process.env.CODEX_PROXY_DISABLE_WS = "1";
+    try {
+      const messages = [
+        { role: "user", content: "First message" },
+        { role: "assistant", content: "First answer" },
+        { role: "user", content: "Continue" },
+      ];
+      const response = await ctx.chatApp.request("/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "gpt-4", user: "http-only-chat", messages }),
+      });
+
+      expect(response.status).toBe(200);
+      const captured = getCapturedCodexRequest();
+      expect(captured.useWebSocket).toBe(false);
+      expect(captured.previous_response_id).toBeUndefined();
+      expect(captured.input).toEqual(messages);
+    } finally {
+      delete process.env.CODEX_PROXY_DISABLE_WS;
+    }
   });
 
   it("Test 1 & 2b: Chat endpoint uses client session via 'user' field if provided", async () => {

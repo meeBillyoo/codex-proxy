@@ -85,6 +85,7 @@ vi.mock("@src/utils/retry.js", () => ({
 
 // Capture the codexRequest handleProxyRequest receives.
 let capturedCodexRequest: unknown = null;
+let capturedHeaders: Record<string, string> = {};
 let requestedStreams = 0;
 
 function makeSseResponse(sseText: string): Response {
@@ -103,6 +104,7 @@ function makeSseResponse(sseText: string): Response {
 vi.mock("@src/routes/shared/proxy-handler.js", () => ({
   handleProxyRequest: vi.fn(async (options: HandleProxyRequestOptions) => {
     capturedCodexRequest = options.req.codexRequest;
+    capturedHeaders = Object.fromEntries(options.c.req.raw.headers.entries());
     requestedStreams++;
     return makeSseResponse(
       'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_1"}}\n\n' +
@@ -151,6 +153,15 @@ function connectWithHeaders(
   });
 }
 
+function connectWithQueryKey(port: number): Promise<{ ws: WebSocket }> {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/v1/responses?key=master-key`);
+  return new Promise((resolve, reject) => {
+    ws.once("open", () => resolve({ ws }));
+    ws.once("unexpected-response", (_req, res) => reject({ status: res.statusCode }));
+    ws.once("error", reject);
+  });
+}
+
 /** Collect the next N JSON frames received on a socket. */
 function receiveJsonFrames(ws: WebSocket, count: number): Promise<unknown[]> {
   const frames: unknown[] = [];
@@ -188,6 +199,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     capturedCodexRequest = null;
+    capturedHeaders = {};
     requestedStreams = 0;
     process.env.PROXY_API_KEY = "master-key";
     loadStaticModels();
@@ -228,6 +240,15 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
     });
   });
 
+  it.each([
+    ["query key", () => connectWithQueryKey(port)],
+    ["x-goog-api-key", () => connectWithHeaders(port, { "x-goog-api-key": "master-key" })],
+  ])("accepts %s authentication for an upgrade", async (_label, connect) => {
+    const { ws } = await (connect as () => Promise<{ ws: WebSocket }>)();
+    expect(ws.readyState).toBe(WebSocket.OPEN);
+    ws.close();
+  });
+
   it("dispatches a response.create frame and streams events back as WS text frames", async () => {
     const { ws } = await connectClient(port, "Bearer master-key");
     const received = receiveJsonFrames(ws, 3);
@@ -246,6 +267,58 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
       { type: "response.output_text.delta", delta: "Hi there" },
       { type: "response.completed", response: { id: "resp_1" } },
     ]);
+    ws.close();
+  });
+
+  it("forwards application conversation headers but strips WebSocket handshake headers", async () => {
+    const { ws } = await connectWithHeaders(port, {
+      Authorization: "Bearer master-key",
+      "x-session-id": "conversation-123",
+      "x-codex-window-id": "window-456",
+    });
+    const received = receiveJsonFrames(ws, 3);
+    ws.send(RESPONSE_CREATE_BODY);
+    await received;
+
+    expect(capturedHeaders["x-session-id"]).toBe("conversation-123");
+    expect(capturedHeaders["x-codex-window-id"]).toBe("window-456");
+    expect(capturedHeaders.upgrade).toBeUndefined();
+    expect(capturedHeaders.connection).toBeUndefined();
+    expect(capturedHeaders["sec-websocket-key"]).toBeUndefined();
+    ws.close();
+  });
+
+  it("returns a structured error for malformed frames and keeps the socket usable", async () => {
+    const { ws } = await connectClient(port, "Bearer master-key");
+    const errorReceived = receiveJsonFrames(ws, 1);
+    ws.send("{");
+    const [errorFrame] = await errorReceived;
+    expect(errorFrame).toMatchObject({
+      type: "error",
+      error: { type: "invalid_request_error" },
+    });
+
+    const responseReceived = receiveJsonFrames(ws, 3);
+    ws.send(RESPONSE_CREATE_BODY);
+    expect(await responseReceived).toHaveLength(3);
+    expect(requestedStreams).toBe(1);
+    ws.close();
+  });
+
+  it("normalizes an unknown model response into a typed error frame", async () => {
+    const { ws } = await connectClient(port, "Bearer master-key");
+    const received = receiveJsonFrames(ws, 1);
+    ws.send(JSON.stringify({
+      model: "model-that-does-not-exist",
+      input: [{ role: "user", content: "Hello" }],
+      stream: true,
+    }));
+    const [frame] = await received;
+    expect(frame).toMatchObject({
+      type: "error",
+      error: { code: "model_not_found" },
+    });
+    expect(requestedStreams).toBe(0);
     ws.close();
   });
 

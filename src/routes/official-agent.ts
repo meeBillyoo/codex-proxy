@@ -57,6 +57,16 @@ export async function closeOfficialAgentBridgeForTesting(): Promise<void> {
   sharedBridge = null;
 }
 
+/** Reset process-local session state between route contract tests. */
+export function resetOfficialAgentStateForTesting(): void {
+  sessions.clear();
+  if (sessionCleanupTimer) {
+    clearInterval(sessionCleanupTimer);
+    sessionCleanupTimer = null;
+  }
+  sessionCleanupBridgeFactory = null;
+}
+
 function errorBody(code: string, message: string): { error: { code: string; message: string } } {
   return { error: { code, message } };
 }

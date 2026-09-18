@@ -388,9 +388,13 @@ describe("E2E: POST /v1/chat/completions", () => {
   });
 
   it("upstream 500: retries then returns server_error", async () => {
-    setTransportPost(async () =>
+    // Count the shared test transport used by both the WSS and HTTP paths.
+    // Chat requests prefer upstream WSS, so asserting only the native HTTP
+    // adapter would miss these retry attempts.
+    const post = vi.fn(async () =>
       makeErrorTransportResponse(500, JSON.stringify({ detail: "Internal error" })),
     );
+    setTransportPost(post);
 
     const res = await chatRequest(defaultBody());
     expect(res.status).toBe(500);
@@ -399,7 +403,7 @@ describe("E2E: POST /v1/chat/completions", () => {
     expect(body.error.type).toBe("server_error");
     expect(body.error.code).toBe("codex_api_error");
     // Should have retried
-    expect(getMockTransport().post).toHaveBeenCalledTimes(3);
+    expect(post).toHaveBeenCalledTimes(3);
   }, 10_000);
 
   // ── Auth ──────────────────────────────────────────────────────

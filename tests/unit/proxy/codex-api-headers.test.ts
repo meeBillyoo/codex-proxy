@@ -539,6 +539,24 @@ describe("codex-api headers", () => {
       expect(response.headers.get("x-codex-proxy-upstream-transport")).toBe("http");
     });
 
+    it("fails closed on a rejected handshake for previous_response_id continuity", async () => {
+      mockCreateWebSocketResponse.mockRejectedValue(
+        new WebSocketHandshakeError(403, JSON.stringify({ error: { message: "upgrade forbidden" } })),
+      );
+
+      const api = await createApi();
+      await expect(api.createResponse(makeRequest({
+        useWebSocket: true,
+        previous_response_id: "resp_owner",
+        input: [{ type: "function_call_output", call_id: "call_1", output: "done" }],
+      }))).rejects.toMatchObject({
+        name: "PreviousResponseWebSocketError",
+        continuityReason: "transport",
+        causeMessage: expect.stringContaining("upgrade forbidden"),
+      });
+      expect(transport.post).not.toHaveBeenCalled();
+    });
+
     it("does not silently drop an explicit previous_response_id when WS is disabled", async () => {
       const api = await createApi();
 

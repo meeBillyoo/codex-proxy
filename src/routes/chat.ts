@@ -25,6 +25,7 @@ import type { FormatAdapter, ProxyRequest } from "./shared/proxy-handler-types.j
 import { summarizeRequestForLog } from "../logs/request-summary.js";
 import { apiKeyAuth } from "../middleware/api-key-auth.js";
 import { resolveDefaultTools, mergeDefaultTools } from "./shared/default-tools.js";
+import { isUpstreamResponsesWebSocketEnabled } from "../proxy/upstream-transport-policy.js";
 
 function makeOpenAIFormat(
   wantReasoning: boolean,
@@ -121,6 +122,11 @@ export function createChatRoutes(
     const defaultTools = resolveDefaultTools(c, { allowUnauthenticated: false });
 
     const { codexRequest, tupleSchema } = translateToCodexRequest(req);
+    // Chat Completions is translated to the Codex Responses protocol. Keep
+    // the transport explicit so the first turn establishes a pooled WSS
+    // owner; without this, only HTTP SSE would run and later turns could not
+    // safely use previous_response_id continuity.
+    codexRequest.useWebSocket = isUpstreamResponsesWebSocketEnabled();
     if (defaultTools.length > 0) {
       codexRequest.tools = mergeDefaultTools(codexRequest.tools, defaultTools);
     }
