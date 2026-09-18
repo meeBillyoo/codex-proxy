@@ -52,6 +52,10 @@ import { parseRateLimitsEvent } from "./rate-limit-headers.js";
 import { CodexApiError } from "./codex-types.js";
 import type { WsCreateRequest } from "./ws-transport.js";
 import { randomUUID } from "crypto";
+import {
+  UPSTREAM_TRANSPORT_HEADER,
+  UPSTREAM_TRANSPORT_WEBSOCKET,
+} from "./upstream-transport-policy.js";
 
 // ── Error types ────────────────────────────────────────────────────
 
@@ -441,6 +445,7 @@ export class PersistentWs {
       const v = Array.isArray(value) ? value[0] : value;
       if (v != null) responseHeaders.set(key, v);
     }
+    responseHeaders.set(UPSTREAM_TRANSPORT_HEADER, UPSTREAM_TRANSPORT_WEBSOCKET);
     return new Response(stream, { status: 200, headers: responseHeaders });
   }
 

@@ -28,6 +28,7 @@ import { extractAnthropicClientConversationId } from "./shared/anthropic-session
 import { summarizeRequestForLog } from "../logs/request-summary.js";
 import { resolveDefaultTools, mergeDefaultTools } from "./shared/default-tools.js";
 import { isRecord } from "../translation/shared-utils.js";
+import { isUpstreamResponsesWebSocketEnabled } from "../proxy/upstream-transport-policy.js";
 
 function makeError(
   type: AnthropicErrorType,
@@ -181,7 +182,7 @@ export function createMessagesRoutes(
       mapClaudeCodeWebSearch: clientConversationId !== null,
       requestId,
     });
-    codexRequest.useWebSocket = true;
+    codexRequest.useWebSocket = isUpstreamResponsesWebSocketEnabled();
     if (defaultTools.length > 0) {
       codexRequest.tools = mergeDefaultTools(codexRequest.tools, defaultTools);
     }

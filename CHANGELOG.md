@@ -8,7 +8,7 @@
 
 ## [Unreleased]
 
-> 暂无已记录的变更。
+- 完善上游 Responses WebSocket 的失败语义与安全降级：捕获并保留非 `101` 握手响应的 HTTP 状态和有限错误体；新请求发生握手失败时自动回退 HTTP SSE，由 HTTP 响应判定 token 是否真正失效；依赖 `previous_response_id` 的请求保持物理 WebSocket 连续性并 fail closed，不再静默丢历史。`CODEX_PROXY_DISABLE_WS=1` 现在统一覆盖 Responses、Messages、Images、隐式续链和恢复重试路径；禁用时跳过增量隐式续链并保留完整输入。连接池创建失败会关闭半初始化连接，避免定时器/连接泄漏，并新增握手 401、禁用续链和 HTTP 回退回归测试。
 
 ## [v2.1.x](https://github.com/icebear0828/codex-proxy/releases?q=2.1) - 2026-09-01 至 2026-09-07
 

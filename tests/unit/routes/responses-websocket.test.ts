@@ -258,7 +258,7 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
       await received;
 
       const req = capturedCodexRequest as Record<string, unknown>;
-      expect(req.useWebSocket).toBeUndefined();
+      expect(req.useWebSocket).toBe(false);
       ws.close();
     } finally {
       delete process.env.CODEX_PROXY_DISABLE_WS;

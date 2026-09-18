@@ -58,6 +58,7 @@ vi.mock("@src/tls/proxy.js", () => ({
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 import { createWebSocketResponse, type WsCreateRequest } from "@src/proxy/ws-transport.js";
+import { WebSocketHandshakeError } from "@src/proxy/ws-handshake-error.js";
 
 interface MockWs extends EventEmitter {
   url: string;
@@ -159,8 +160,28 @@ describe("createWebSocketResponse", () => {
     ws.emit("message", JSON.stringify({ type: "response.output_text.delta", delta: "hi" }));
     const response = await promise;
     expect(response.status).toBe(200);
+    expect(response.headers.get("x-codex-proxy-upstream-transport")).toBe("websocket");
 
     ws.close();
+  });
+
+  it("preserves the upstream HTTP status when the WebSocket upgrade is rejected", async () => {
+    const { promise, ws } = await startConnect(BASE_REQUEST);
+    const response = new EventEmitter() as EventEmitter & {
+      statusCode: number;
+      headers: Record<string, string>;
+      resume(): void;
+    };
+    response.statusCode = 401;
+    response.headers = { "content-type": "application/json" };
+    response.resume = () => queueMicrotask(() => response.emit("end"));
+
+    ws.emit("unexpected-response", {}, response);
+
+    await expect(promise).rejects.toMatchObject({
+      name: "WebSocketHandshakeError",
+      status: 401,
+    } satisfies Partial<WebSocketHandshakeError>);
   });
 
   it("uses the global proxy only when proxyUrl is undefined", async () => {

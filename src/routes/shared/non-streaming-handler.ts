@@ -26,6 +26,7 @@ import { forwardCodexRateLimitHeaders } from "./codex-rate-limit-response-header
 import { relayCodexTurnState } from "./codex-turn-state.js";
 import { updateLogEntry } from "../../logs/entry.js";
 import { calculateLogMetrics } from "../../logs/metrics.js";
+import { isWebSocketUpstreamResponse } from "../../proxy/upstream-transport-policy.js";
 
 
 const MAX_EMPTY_RETRIES = 2;
@@ -102,19 +103,25 @@ export async function handleNonStreaming(options: HandleNonStreamingOptions): Pr
         },
       });
       const { result, responseFunctionCallIds, reasoningReplayItems } = collected;
-      recordNonStreamingSuccessAffinity({
-        affinityMap,
-        responseId: result.responseId,
-        entryId: currentEntryId,
-        conversationId,
-        turnState,
-        instructions: req.codexRequest.instructions ?? undefined,
-        inputTokens: result.usage.input_tokens,
-        responseFunctionCallIds,
-        variantHash,
-        chainAdvanceTicket,
-      });
-      if (result.responseId && conversationId && variantHash && reasoningReplayItems.length > 0) {
+      const canRecordResponseContinuity = isWebSocketUpstreamResponse(
+        currentRawResponse,
+        req.codexRequest.useWebSocket,
+      );
+      if (canRecordResponseContinuity) {
+        recordNonStreamingSuccessAffinity({
+          affinityMap,
+          responseId: result.responseId,
+          entryId: currentEntryId,
+          conversationId,
+          turnState,
+          instructions: req.codexRequest.instructions ?? undefined,
+          inputTokens: result.usage.input_tokens,
+          responseFunctionCallIds,
+          variantHash,
+          chainAdvanceTicket,
+        });
+      }
+      if (canRecordResponseContinuity && result.responseId && conversationId && variantHash && reasoningReplayItems.length > 0) {
         getReasoningReplayCache().record({
           responseId: result.responseId,
           entryId: currentEntryId,

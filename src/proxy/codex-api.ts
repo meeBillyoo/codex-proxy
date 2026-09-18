@@ -19,6 +19,11 @@ import {
 import { createWebSocketResponse, type WsCreateRequest, type WsPoolContext } from "./ws-transport.js";
 import type { ParsedRateLimit } from "./rate-limit-headers.js";
 import { getInstallationId } from "./installation-id.js";
+import { WebSocketHandshakeError } from "./ws-handshake-error.js";
+import {
+  UPSTREAM_TRANSPORT_HEADER,
+  UPSTREAM_TRANSPORT_HTTP,
+} from "./upstream-transport-policy.js";
 import { normalizeOpenAISubagent, OPENAI_SUBAGENT_HEADER } from "./openai-subagent.js";
 import {
   X_CODEX_WINDOW_ID_HEADER,
@@ -272,10 +277,33 @@ export class CodexApi {
     onRateLimits?: (rl: ParsedRateLimit) => void,
     poolCtx?: WsPoolContext,
   ): Promise<Response> {
+    if (request.previous_response_id && request.useWebSocket === false) {
+      throw new PreviousResponseWebSocketError(
+        "Upstream WebSocket transport is disabled; cannot continue previous_response_id over HTTP SSE",
+        "disabled",
+      );
+    }
     if (request.useWebSocket) {
       try {
         return await this.createResponseViaWebSocket(request, signal, onRateLimits, poolCtx);
       } catch (err) {
+        if (err instanceof WebSocketHandshakeError) {
+          const msg = err.message;
+          if (request.previous_response_id) {
+            console.warn(
+              `[CodexApi] ${msg}; previous_response_id cannot safely fall back to HTTP SSE`,
+            );
+            throw new PreviousResponseWebSocketError(msg, "transport");
+          }
+          // A rejected HTTP upgrade is not proof that the bearer token is
+          // invalid. Retry the same full request over HTTP so the normal HTTP
+          // response can classify credential/account errors and refresh the
+          // account when appropriate.
+          console.warn(`[CodexApi] ${msg}; falling back to HTTP SSE`);
+          request.useWebSocket = false;
+          const { useWebSocket: _ws, ...httpRequest } = request;
+          return this.createResponseViaHttp(httpRequest as CodexResponsesRequest, signal);
+        }
         // Real upstream API errors classified by ws-transport (e.g.
         // usage_limit_reached → CodexApiError(429)) must reach the
         // proxy-handler's error flow on the same account, not retry
@@ -291,6 +319,7 @@ export class CodexApi {
           throw new PreviousResponseWebSocketError(msg);
         }
         console.warn(`[CodexApi] WebSocket failed (${msg}), falling back to HTTP SSE`);
+        request.useWebSocket = false;
         const { previous_response_id: _, useWebSocket: _ws, ...httpRequest } = request;
         return this.createResponseViaHttp(httpRequest as CodexResponsesRequest, signal);
       }
@@ -461,9 +490,11 @@ export class CodexApi {
       );
     }
 
+    const responseHeaders = new Headers(transportRes.headers);
+    responseHeaders.set(UPSTREAM_TRANSPORT_HEADER, UPSTREAM_TRANSPORT_HTTP);
     return new Response(transportRes.body, {
       status: transportRes.status,
-      headers: transportRes.headers,
+      headers: responseHeaders,
     });
   }
 
@@ -539,3 +570,4 @@ export class CodexApi {
 
 // Re-export CodexApiError for backward compatibility
 export { CodexApiError, PreviousResponseWebSocketError } from "./codex-types.js";
+export { WebSocketHandshakeError } from "./ws-handshake-error.js";

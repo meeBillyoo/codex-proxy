@@ -24,6 +24,14 @@ import { CodexApiError, PreviousResponseWebSocketError } from "./codex-types.js"
 import { getProxyUrl } from "../tls/proxy.js";
 import { isPreviousResponseNotFoundError } from "./error-classification.js";
 import {
+  readWebSocketHandshakeError,
+  WebSocketHandshakeError,
+} from "./ws-handshake-error.js";
+import {
+  UPSTREAM_TRANSPORT_HEADER,
+  UPSTREAM_TRANSPORT_WEBSOCKET,
+} from "./upstream-transport-policy.js";
+import {
   DEFAULT_WS_RESPONSE_START_TIMEOUT_MS,
   PersistentWs,
   WsReusedConnectionError,
@@ -217,23 +225,36 @@ async function createPersistentWsConnection(opts: {
     hooks: opts.hooks,
   });
 
-  await new Promise<void>((resolve, reject) => {
-    if (ws.readyState === ws.OPEN) {
-      resolve();
-      return;
-    }
-    const cleanup = () => {
-      ws.removeListener("open", onOpen);
-      ws.removeListener("error", onErr);
-      ws.removeListener("close", onClose);
-    };
-    const onOpen = () => { cleanup(); resolve(); };
-    const onErr = (err: Error) => { cleanup(); reject(err); };
-    const onClose = () => { cleanup(); reject(new Error("WebSocket closed before open")); };
-    ws.once("open", onOpen);
-    ws.once("error", onErr);
-    ws.once("close", onClose);
-  });
+  try {
+    await new Promise<void>((resolve, reject) => {
+      if (ws.readyState === ws.OPEN) {
+        resolve();
+        return;
+      }
+      const cleanup = () => {
+        ws.removeListener("open", onOpen);
+        ws.removeListener("error", onErr);
+        ws.removeListener("close", onClose);
+        ws.removeListener("unexpected-response", onUnexpectedResponse);
+      };
+      const onOpen = () => { cleanup(); resolve(); };
+      const onErr = (err: Error) => { cleanup(); reject(err); };
+      const onClose = () => { cleanup(); reject(new Error("WebSocket closed before open")); };
+      const onUnexpectedResponse = (_request: unknown, response: import("node:http").IncomingMessage) => {
+        void readWebSocketHandshakeError(response).then((err) => {
+          cleanup();
+          reject(err);
+        });
+      };
+      ws.once("open", onOpen);
+      ws.once("error", onErr);
+      ws.once("close", onClose);
+      ws.once("unexpected-response", onUnexpectedResponse);
+    });
+  } catch (err) {
+    persistent.closeGracefully();
+    throw err;
+  }
 
   return persistent;
 }
@@ -306,6 +327,10 @@ export async function createWebSocketResponse(
           }),
       );
     } catch (err) {
+      if (err instanceof WebSocketHandshakeError) {
+        poolCtx.onDecision?.({ kind: "bypass", reason: `handshake_${err.status}` });
+        throw err;
+      }
       // Only connection construction/acquisition errors reach this fallback.
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[ws-pool] acquire failed, using one-shot fallback: ${msg}`);
@@ -479,6 +504,7 @@ async function openOneShotWs(
         const v = Array.isArray(value) ? value[0] : value;
         if (v != null) responseHeaders.set(key, v);
       }
+      responseHeaders.set(UPSTREAM_TRANSPORT_HEADER, UPSTREAM_TRANSPORT_WEBSOCKET);
       return new Response(stream, { status: 200, headers: responseHeaders });
     }
 
@@ -500,6 +526,14 @@ async function openOneShotWs(
       pingTimer = setInterval(() => {
         try { ws.ping(); } catch { /* ws already closed */ }
       }, 25_000);
+    });
+
+    ws.on("unexpected-response", (_request, response) => {
+      if (earlyDecisionMade) return;
+      earlyDecisionMade = true;
+      cleanupTimers();
+      closeWs(1000, "handshake rejected", true);
+      void readWebSocketHandshakeError(response).then(reject);
     });
 
     ws.on("message", (data: Buffer | string) => {

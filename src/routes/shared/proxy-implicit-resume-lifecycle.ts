@@ -10,6 +10,7 @@ import {
   shouldReplayFullInputAfterImplicitResumeError,
   type ImplicitResumeOpts,
 } from "./proxy-session-helpers.js";
+import { isUpstreamResponsesWebSocketEnabled } from "../../proxy/upstream-transport-policy.js";
 
 type ImplicitResumeEvaluation = ReturnType<typeof evaluateImplicitResume>;
 type ImplicitResumeWarn = (message: string) => void;
@@ -75,6 +76,10 @@ export function createImplicitResumeLifecycle(
     evaluation,
     activate(): void {
       if (!evaluation.active || active || !implicitPrevRespId) return;
+      // HTTP SSE cannot safely carry the server-side previous_response_id
+      // continuation. When upstream WS is disabled, keep the original full
+      // input intact and let HTTP process it as a self-contained request.
+      if (request.codexRequest.useWebSocket === false) return;
       usageHint = applyImplicitResumeRequest({
         request,
         implicitPrevRespId,
@@ -114,14 +119,16 @@ export function createImplicitResumeLifecycle(
       restore();
       // Rebuild a response-owner chain on a pooled WS. If WS connection setup
       // itself fails, CodexApi may still fall back to HTTP with full input.
-      request.codexRequest.useWebSocket = process.env.CODEX_PROXY_DISABLE_WS !== "1";
+      request.codexRequest.useWebSocket = isUpstreamResponsesWebSocketEnabled();
       request.codexRequest.previous_response_id = undefined;
       request.codexRequest.turnState = snapshot.turnState;
       return true;
     },
     restore,
     resumeReasonForAttempt(): string | null {
-      return evaluation.active ? null : evaluation.reason;
+      if (active) return null;
+      if (evaluation.active) return "websocket_disabled";
+      return evaluation.reason;
     },
   };
 }

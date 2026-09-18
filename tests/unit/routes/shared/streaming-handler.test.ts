@@ -91,7 +91,10 @@ describe("handleStreaming", () => {
       req: createStreamingRequest(),
       fmt,
       api: {} as unknown as CodexApi,
-      response: new Response("", { headers: { "x-codex-turn-state": "turn-stream" } }),
+      response: new Response("", { headers: {
+        "x-codex-turn-state": "turn-stream",
+        "x-codex-proxy-upstream-transport": "websocket",
+      } }),
       entryId: "entry-stream",
       abortController,
       released: new Set<string>(),
@@ -268,5 +271,43 @@ describe("handleStreaming", () => {
       undefined,
       "variant-stream",
     )).toBeNull();
+  });
+
+  it("does not create previous-response affinity for an HTTP fallback response", async () => {
+    const { pool } = createMockAccountPool();
+    const affinityMap = new SessionAffinityMap();
+    affinityMaps.push(affinityMap);
+    const request = createStreamingRequest();
+    request.codexRequest.useWebSocket = true;
+    const fmt = createMockFormatAdapter({
+      streamTranslator: vi.fn(async function* (options: FormatStreamTranslatorOptions) {
+        options.onResponseId("resp_http");
+        options.onResponseCompleted?.("resp_http");
+        yield "event: response.completed\ndata: {}\n\n";
+      }),
+    });
+    const app = new Hono();
+
+    app.get("/stream", (c) => handleStreaming({
+      c,
+      accountPool: pool,
+      req: request,
+      fmt,
+      api: {} as unknown as CodexApi,
+      response: new Response("", { headers: {
+        "x-codex-proxy-upstream-transport": "http",
+      } }),
+      entryId: "entry-stream",
+      abortController: new AbortController(),
+      released: new Set<string>(),
+      requestId: "request-http-fallback",
+      affinityMap,
+      conversationId: "conversation-http",
+      variantHash: "variant-http",
+    }));
+
+    await (await app.request("/stream")).text();
+
+    expect(affinityMap.lookup("resp_http")).toBeNull();
   });
 });

@@ -33,13 +33,15 @@ test -f "${CODEX_HOME:-$HOME/.codex}/auth.json" && echo "Codex CLI 已登录"
 
 ```bash
 export PROXY_API_KEY='替换为高强度随机密钥'
-
-# 如果上游 Responses WebSocket 握手返回 401，可强制使用 HTTP SSE
-export CODEX_PROXY_DISABLE_WS=1
 export CODEX_PROXY_HOST=127.0.0.1
 export PORT=8080
 npm start
 ```
+
+默认优先使用上游 Responses WebSocket，并在不依赖 `previous_response_id`
+的请求发生握手或传输故障时自动、安全地回退到 HTTP SSE。只有部署网络完全不支持
+上游 WebSocket 时，才设置 `CODEX_PROXY_DISABLE_WS=1`；此模式保留完整历史请求，
+但显式 `previous_response_id` 续链会返回错误而不会静默丢失上下文。
 
 服务启动后打开 `http://127.0.0.1:8080/`，使用 `PROXY_API_KEY` 登录 Dashboard。认证文件变化后可重启进程，或调用：
 

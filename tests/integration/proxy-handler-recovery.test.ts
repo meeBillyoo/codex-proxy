@@ -171,7 +171,7 @@ describe("proxy-handler recovery & defense", () => {
           { role: "user", content: "continue" },
         ],
         turnState: "turn-original",
-        useWebSocket: false,
+        useWebSocket: true,
       },
     };
     const affinityMap = getSessionAffinityMap();

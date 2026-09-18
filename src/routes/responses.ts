@@ -29,6 +29,7 @@ import {
 import { PASSTHROUGH_FORMAT } from "./responses-passthrough.js";
 import { handleCompact } from "./responses-compact.js";
 import { resolveDefaultTools, mergeDefaultTools } from "./shared/default-tools.js";
+import { isUpstreamResponsesWebSocketEnabled } from "../proxy/upstream-transport-policy.js";
 
 // Re-export for downstream consumers
 export { extractResponseUsage, extractImageGenUsage, streamPassthrough, collectPassthrough } from "./responses-passthrough.js";
@@ -134,12 +135,9 @@ export function createResponsesRoutes(
       store: false,
     };
 
-    // Some upstream account/auth combinations reject the Responses WebSocket
-    // handshake with a misleading 401 (missing bearer). Keep the existing WS
-    // path available while allowing deployments to force HTTP SSE.
-    if (process.env.CODEX_PROXY_DISABLE_WS !== "1") {
-      codexRequest.useWebSocket = true;
-    }
+    // Keep the transport choice explicit so implicit-resume can preserve it.
+    // HTTP SSE cannot safely carry a previous_response_id continuation.
+    codexRequest.useWebSocket = isUpstreamResponsesWebSocketEnabled();
     const forcedReview = c.req.path === "/v1/responses/review" || c.req.path === "/responses/review";
     const openAiSubagent =
       forcedReview

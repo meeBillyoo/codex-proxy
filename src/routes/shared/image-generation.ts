@@ -18,6 +18,7 @@ import type {
   FormatCollectTranslatorResult,
   ResponseMetadata,
 } from "./proxy-handler-types.js";
+import { isUpstreamResponsesWebSocketEnabled } from "../../proxy/upstream-transport-policy.js";
 
 const IMAGE_SIZES = [
   "1024x1024",
@@ -104,7 +105,7 @@ export function buildImageGenerationCodexRequest(
     stream: true,
     store: false,
     tools: [imageTool],
-    ...(process.env.CODEX_PROXY_DISABLE_WS !== "1" ? { useWebSocket: true } : {}),
+    useWebSocket: isUpstreamResponsesWebSocketEnabled(),
   };
 }
 

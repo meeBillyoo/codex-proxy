@@ -1,74 +1,94 @@
-# codex-proxy 服务器部署说明（8221）
+# codex-proxy 服务器标准部署说明（8221）
 
-## 部署信息
+本文档是所有 codex-proxy 服务器的统一部署合同。新增服务器、日常更新、故障修复和
+回滚都必须遵循同一套 release 流程；服务器之间只允许连接信息、系统用户和应用根目录
+不同，不应各自维护另一套部署命令。
 
-- 服务器：`34.28.243.240`
-- SSH 用户：`collaborators`
-- 工作目录：`/home/collaborators/services/codex-proxy`
-- 源码目录：`/home/collaborators/services/codex-proxy/source`
-- 监听地址：`0.0.0.0:8221`
-- 运行方式：Node.js 24 + PM2
-- PM2 任务名：`codex-proxy`
+本方案不使用 Docker、Podman 或项目自建 systemd 服务。应用统一使用 Node.js 24、
+PM2、不可变 release 目录、`current` 软链接以及共享运行数据目录。
 
-本方案不使用 Docker、Podman 或自定义 systemd 服务，应用进程统一由 PM2 管理。
+## 服务器登记表
 
-## Key 配置
+| 名称 | SSH | 应用根目录 | 状态 |
+| --- | --- | --- | --- |
+| `GCUbuntuDemo` | `ssh clawbot@35.201.250.172 -i /Users/token/Work/sshfile/id_rsa_omnisciate` | `/home/clawbot/apps/codex-proxy` | 已按本标准部署 |
+| 原 `34.28.243.240` 环境 | `ssh collaborators@34.28.243.240` | `/home/collaborators/services/codex-proxy` | 历史固定目录部署，更新前应迁移到本标准 |
 
-Key 保存在服务器文件：
+新增服务器时先在本表登记名称、SSH 连接方式和应用根目录。不要在文档中记录私钥内容、
+`PROXY_API_KEY`、Codex 登录 token 或其他凭据。
+
+## 统一参数
+
+登录目标服务器后先设置该服务器的参数。除 `APP_ROOT` 外，所有服务器原则上使用相同
+值：
+
+```bash
+APP_ROOT="$HOME/apps/codex-proxy"
+REPO_URL=https://github.com/meeBillyoo/codex-proxy.git
+DEPLOY_BRANCH=dev
+PORT=8221
+PM2_APP_NAME=codex-proxy
+```
+
+标准目录结构如下：
 
 ```text
-/home/collaborators/services/codex-proxy/.env
+<APP_ROOT>/
+├── current -> releases/<release-id>
+├── releases/
+│   ├── <previous-release-id>/
+│   └── <release-id>/
+└── shared/
+    ├── codex-proxy.env
+    └── data/
 ```
 
-文件权限必须保持为 `600`。查看完整配置：
+约束：
+
+- `releases/<release-id>` 是可回滚的完整源码和构建产物。
+- `current` 只指向通过切换前检查的 release。
+- 每个 release 的 `data` 必须链接到 `shared/data`。
+- `shared/codex-proxy.env` 必须保持 `600` 权限。
+- 切换和回滚不得覆盖或删除 `shared`。
+- 不在 release 中直接开发或手工修改源码；修复应提交到仓库，再部署新 release。
+
+## 运行时准备
+
+### Node.js、npm、PM2 和 Rust
+
+项目要求 Node.js 24。Linux 原生 TLS transport 需要 Rust/N-API 构建工具链：
 
 ```bash
-cat /home/collaborators/services/codex-proxy/.env
-```
+export NVM_DIR="$HOME/.nvm"
 
-只显示 Key 值：
-
-```bash
-sed -n 's/^PROXY_API_KEY=//p' /home/collaborators/services/codex-proxy/.env
-```
-
-客户端按照 OpenAI API 格式携带：
-
-```http
-Authorization: Bearer <PROXY_API_KEY>
-```
-
-## 首次部署
-
-部署前先检查 Node.js 主版本。本项目优先使用 Node.js 24；如果服务器当前不是
-Node.js 24，则安装或加载 nvm，再安装并切换到 Node.js 24：
-
-```bash
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
-
-if [ "$NODE_MAJOR" != "24" ]; then
-  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-
-  if [ ! -s "$NVM_DIR/nvm.sh" ]; then
-    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-  fi
-
-  . "$NVM_DIR/nvm.sh"
-  nvm install 24
-  nvm use 24
-  nvm alias default 24
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 fi
+
+. "$NVM_DIR/nvm.sh"
+nvm install 24
+nvm use 24
+nvm alias default 24
+
+if ! command -v cargo >/dev/null 2>&1; then
+  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+  . "$HOME/.cargo/env"
+fi
+
+npm install --global npm@11.9.0 pm2
 
 node --version
 npm --version
+pm2 --version
+cargo --version
 ```
 
-`node --version` 必须输出 `v24.x.x` 后再继续安装部署。如果服务器已经是 Node.js
-24，可直接复用当前 Node.js，无需强制改用 nvm。
+`node --version` 必须为 `v24.x.x`。非交互 SSH 不一定加载 nvm；自动化脚本和运维命令
+必须显式加载 `$HOME/.nvm/nvm.sh`，不能假定 `npm` 和 `pm2` 已经位于 `PATH`。
 
-使用将要运行 PM2 任务的同一个系统用户安装并登录 Codex CLI。服务只读取该用户的
-`${CODEX_HOME:-$HOME/.codex}/auth.json`，不会在控制面板中发起 OAuth，也不会复制、
-保存或刷新 token：
+### Codex CLI 账号
+
+使用运行 PM2 的同一个系统用户安装并登录 Codex CLI：
 
 ```bash
 codex --version
@@ -76,210 +96,343 @@ codex login
 test -f "${CODEX_HOME:-$HOME/.codex}/auth.json"
 ```
 
-然后执行：
+服务读取该用户的 `${CODEX_HOME:-$HOME/.codex}/auth.json`。不得把 auth 文件复制进
+release，也不得在部署日志中打印其中的 token。
+
+### 共享配置
+
+创建标准目录并写入服务器自己的环境文件：
 
 ```bash
-cd /home/collaborators/services/codex-proxy/source
+mkdir -p "$APP_ROOT/releases" "$APP_ROOT/shared/data"
+touch "$APP_ROOT/shared/codex-proxy.env"
+chmod 600 "$APP_ROOT/shared/codex-proxy.env"
+```
 
+环境文件至少提供：
+
+```dotenv
+PROXY_API_KEY=<server-specific-secret>
+```
+
+各服务器应使用独立、高熵的 Key。不要在命令行参数、Git、聊天记录或部署文档中保存
+真实 Key。
+
+## 标准发布流程
+
+### 1. 登录并设置参数
+
+```bash
+export NVM_DIR="$HOME/.nvm"
+. "$NVM_DIR/nvm.sh"
+nvm use 24
+export PATH="$HOME/.cargo/bin:$PATH"
+
+APP_ROOT="$HOME/apps/codex-proxy"
+REPO_URL=https://github.com/meeBillyoo/codex-proxy.git
+DEPLOY_BRANCH=dev
+PORT=8221
+PM2_APP_NAME=codex-proxy
+```
+
+### 2. 创建 release
+
+每次发布创建新目录，不在 `current` 指向的运行版本中执行 `git pull`：
+
+```bash
+set -e
+
+RELEASE_ID="$(date -u +%Y%m%d-%H%M%S)"
+RELEASE_DIR="$APP_ROOT/releases/$RELEASE_ID"
+
+mkdir -p "$APP_ROOT/releases" "$APP_ROOT/shared/data"
+
+git clone --depth 1 --branch "$DEPLOY_BRANCH" \
+  "$REPO_URL" \
+  "$RELEASE_DIR"
+
+ln -s ../../shared/data "$RELEASE_DIR/data"
+```
+
+记录部署提交，后续验收必须确认 `HEAD` 与远端分支一致：
+
+```bash
+git -C "$RELEASE_DIR" fetch --prune origin
+git -C "$RELEASE_DIR" rev-parse HEAD
+git -C "$RELEASE_DIR" rev-parse "origin/$DEPLOY_BRANCH"
+```
+
+### 3. 安装依赖和构建
+
+根项目、原生模块和 Web 项目有各自的依赖安装步骤，三者都不能省略：
+
+```bash
+cd "$RELEASE_DIR"
 npm ci
-cd web
+
+cd "$RELEASE_DIR/native"
 npm ci
 npm run build
-cd ..
-npx tsc
+test -s codex-tls.linux-x64-gnu.node
+
+cd "$RELEASE_DIR/web"
+npm ci
+
+cd "$RELEASE_DIR"
+npm run build
+test -s dist/index.js
+test -s public/index.html
 ```
 
-安装 PM2：
+根目录的 `npm run build` 只构建 Web 和 TypeScript，不会生成 Linux 原生 TLS 模块。
+必须单独执行 `native/npm run build`。
 
-```bash
-npm install --global pm2
-pm2 --version
+2026-09-18 曾发生 release 漏掉 `native/codex-tls.linux-x64-gnu.node` 的事故，PM2
+连续重启后进入 `errored`，日志为：
+
+```text
+Cannot find module 'codex-tls-linux-x64-gnu'
 ```
 
-加载服务环境变量并创建 PM2 任务：
+### 4. 切换前检查
+
+验证原生模块导出：
 
 ```bash
-cd /home/collaborators/services/codex-proxy/source
+cd "$RELEASE_DIR"
+node - <<'NODE'
+const bindings = require("./native/index.js");
+for (const name of ["httpGet", "httpPost", "httpPostStream"]) {
+  if (typeof bindings[name] !== "function") {
+    throw new Error(`native export missing: ${name}`);
+  }
+}
+console.log("native addon OK");
+NODE
+```
+
+确认 release 没有意外源码改动；允许的未跟踪项只有标准 `data` 软链接和构建产物：
+
+```bash
+git -C "$RELEASE_DIR" status --short --branch
+readlink "$RELEASE_DIR/data"
+```
+
+### 5. 原子切换 current
+
+先记录旧 release，再替换 `current`：
+
+```bash
+OLD_RELEASE="$(readlink -f "$APP_ROOT/current" 2>/dev/null || true)"
+echo "Previous release: $OLD_RELEASE"
+
+ln -sfn "$RELEASE_DIR" "$APP_ROOT/current.next"
+mv -Tf "$APP_ROOT/current.next" "$APP_ROOT/current"
+```
+
+`OLD_RELEASE` 是本次发布的直接回滚目标。在新版本验收完成前不得删除它。
+
+### 6. 创建或重启 PM2 任务
+
+已有任务时，保留 PM2 中的现有运行环境并重启：
+
+```bash
+if pm2 describe "$PM2_APP_NAME" >/dev/null 2>&1; then
+  pm2 restart "$PM2_APP_NAME"
+else
+  set -a
+  . "$APP_ROOT/shared/codex-proxy.env"
+  set +a
+
+  export NODE_ENV=production
+  export PORT
+  export CODEX_PROXY_HOST=0.0.0.0
+
+  pm2 start "$(command -v npm)" \
+    --name "$PM2_APP_NAME" \
+    --cwd "$APP_ROOT/current" \
+    --interpreter "$(command -v node)" \
+    --time \
+    -- start
+fi
+```
+
+如果本次发布同时修改了 `shared/codex-proxy.env`，必须先加载新值，并使用
+`--update-env` 重启：
+
+```bash
+set -a
+. "$APP_ROOT/shared/codex-proxy.env"
+set +a
+export NODE_ENV=production
+export PORT
+export CODEX_PROXY_HOST=0.0.0.0
+pm2 restart "$PM2_APP_NAME" --update-env
+```
+
+默认不要设置 `CODEX_PROXY_DISABLE_WS`：服务优先使用上游 Responses WebSocket，
+无状态请求遇到握手/传输故障会自动回退到 HTTP SSE。只有目标网络完全无法访问上游
+WebSocket 时，才在 `shared/codex-proxy.env` 中设置
+`CODEX_PROXY_DISABLE_WS=1` 并用 `--update-env` 重启。
+
+不要在切换前执行 `pm2 save`。只有新 release 通过全部验收后才保存任务列表。
+
+## 验收
+
+### 进程和启动日志
+
+```bash
+pm2 status "$PM2_APP_NAME"
+pm2 describe "$PM2_APP_NAME"
+pm2 logs "$PM2_APP_NAME" --lines 120 --nostream
+ss -lntp | grep ":$PORT "
+```
+
+PM2 必须为 `online`，观察期间 restart 计数不能继续增长。启动日志必须包含：
+
+```text
+[TLS] Using native (rustls) transport
+Status: Authenticated
+```
+
+### 健康和鉴权
+
+```bash
+BASE_URL="http://127.0.0.1:$PORT"
+
+curl -fsS "$BASE_URL/health"
 
 set -a
-. /home/collaborators/services/codex-proxy/.env
+. "$APP_ROOT/shared/codex-proxy.env"
 set +a
 
-# Work around upstream Responses WebSocket 401s by using HTTP SSE.
-export CODEX_PROXY_DISABLE_WS=1
+# 不带 Key 必须返回 401。
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  "$BASE_URL/v1/models"
 
-export NODE_ENV=production
-export PORT=8221
-export CODEX_PROXY_HOST=0.0.0.0
+# 带 Key 必须返回 200。
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  "$BASE_URL/v1/models" \
+  -H "Authorization: Bearer $PROXY_API_KEY"
+```
 
-pm2 start dist/index.js \
-  --name codex-proxy \
-  --cwd /home/collaborators/services/codex-proxy/source \
-  --interpreter "$(command -v node)" \
-  --time
+`/health` 必须返回 HTTP `200`，并包含 `"status":"ok"`、
+`"authenticated":true` 和 active 账号状态。
 
+### 外部验证
+
+从另一台机器验证该服务器的公网地址：
+
+```bash
+curl -fsS "http://<server-public-ip>:$PORT/health"
+```
+
+如果服务器本机正常但公网超时，检查云防火墙是否允许 TCP `8221`。生产环境应限制
+可信来源 IP，或者在公网入口前配置 HTTPS 反向代理。
+
+### 最终验收清单
+
+- `HEAD` 与 `origin/$DEPLOY_BRANCH` 一致。
+- 原生 TLS 模块存在并能加载三个预期导出。
+- 根项目、Web 和 TypeScript 生产构建成功。
+- `current` 指向本次 release，`data` 指向 `shared/data`。
+- PM2 任务为 `online`，restart 计数稳定。
+- `0.0.0.0:8221` 正常监听。
+- `/health` 返回 HTTP `200` 且认证账号 active。
+- `/v1/models` 无 Key 返回 `401`，正确 Key 返回 `200`。
+- 模型同步日志正常，没有新的启动错误。
+- 公网健康检查成功。
+
+验收全部通过后执行：
+
+```bash
 pm2 save
 ```
 
-`pm2 save` 保存当前任务列表。本项目不创建 systemd 服务，也不执行 `pm2 startup`。
-服务器重启后，由现有的 PM2 运维机制恢复任务；如果没有统一的开机调度，登录服务器后
-手动执行 `pm2 resurrect`。
+## 回滚
+
+任何关键验收失败都应立即回滚，不在故障 release 上临时堆叠修改：
+
+```bash
+ROLLBACK_RELEASE="$APP_ROOT/releases/REPLACE_WITH_PREVIOUS_RELEASE_ID"
+
+test -d "$ROLLBACK_RELEASE"
+ln -sfn "$ROLLBACK_RELEASE" "$APP_ROOT/current.next"
+mv -Tf "$APP_ROOT/current.next" "$APP_ROOT/current"
+pm2 restart "$PM2_APP_NAME"
+curl -fsS "http://127.0.0.1:$PORT/health"
+pm2 save
+```
+
+回滚只切换代码和构建产物。不得删除或回滚 `shared/data`，不得覆盖
+`shared/codex-proxy.env`。
 
 ## 日常运维
 
-查看状态：
-
 ```bash
-pm2 status
+export NVM_DIR="$HOME/.nvm"
+. "$NVM_DIR/nvm.sh"
+nvm use 24
+
+pm2 status codex-proxy
 pm2 describe codex-proxy
-```
-
-查看日志：
-
-```bash
 pm2 logs codex-proxy --lines 200 --nostream
 ```
 
-实时日志：
+服务启动后如果重新执行了 `codex login` 或替换认证文件，可重启或热加载账号：
 
 ```bash
-pm2 logs codex-proxy
-```
-
-重启服务：
-
-```bash
-set -a
-. /home/collaborators/services/codex-proxy/.env
-set +a
-pm2 restart codex-proxy --update-env
-```
-
-停止或重新启动任务：
-
-```bash
-pm2 stop codex-proxy
-pm2 start codex-proxy
-```
-
-更新源码后重新部署：
-
-```bash
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || true)"
-if [ "$NODE_MAJOR" != "24" ]; then
-  export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-  [ -s "$NVM_DIR/nvm.sh" ] || curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-  . "$NVM_DIR/nvm.sh"
-  nvm install 24
-  nvm use 24
-fi
-
-node --version  # 必须为 v24.x.x
-cd /home/collaborators/services/codex-proxy/source
-npm ci
-cd web && npm ci && npm run build && cd ..
-npx tsc
+pm2 restart codex-proxy
 
 set -a
-. /home/collaborators/services/codex-proxy/.env
+. "$APP_ROOT/shared/codex-proxy.env"
 set +a
-export CODEX_PROXY_DISABLE_WS=1
-export NODE_ENV=production
-export PORT=8221
-export CODEX_PROXY_HOST=0.0.0.0
-
-if pm2 describe codex-proxy >/dev/null 2>&1; then
-  pm2 restart codex-proxy --update-env
-else
-  pm2 start dist/index.js \
-    --name codex-proxy \
-    --cwd /home/collaborators/services/codex-proxy/source \
-    --interpreter "$(command -v node)" \
-    --time
-fi
-
-pm2 save
+curl -fsS -X POST "http://127.0.0.1:$PORT/auth/reload" \
+  -H "Authorization: Bearer $PROXY_API_KEY"
 ```
 
-## Codex CLI 账号
+## 常见故障
 
-部署完成后打开：
+### 非交互 SSH 找不到 npm 或 PM2
+
+原因通常是未加载 nvm：
+
+```bash
+export NVM_DIR="$HOME/.nvm"
+. "$NVM_DIR/nvm.sh"
+nvm use 24
+```
+
+### PM2 为 errored
+
+```bash
+pm2 describe codex-proxy
+pm2 logs codex-proxy --lines 200 --nostream
+```
+
+如果出现 `Cannot find module 'codex-tls-linux-x64-gnu'`，说明 release 不完整。标准处理
+是构建一个包含 Linux 原生模块的新 release；紧急恢复时可以先回滚到上一个完整 release。
+
+### 客户端仍请求 api.openai.com
+
+如果错误 URL 是 `https://api.openai.com/v1/responses`，请求没有进入本代理。检查 Codex
+App 的 `model_provider`、`base_url` 和 Bearer Token，完全退出并重新打开 App，然后
+新建会话。旧会话可能继续使用创建时保存的 provider。
+
+客户端基础地址应为：
 
 ```text
-http://34.28.243.240:8221/
+http://<server-public-ip>:8221/v1
 ```
 
-使用 `.env` 中的 `PROXY_API_KEY` 登录控制面板。页面显示的是 PM2 运行用户当前的
-Codex CLI 账号；不能在页面中添加、删除或切换账号。
+### PM2 开机恢复
 
-如果在服务启动后执行了 `codex login`、重新登录或切换认证文件，可重启任务：
+所有服务器统一由既有 PM2 运维机制恢复进程。本项目不自行创建 systemd 服务，也不在
+日常发布中重复执行 `pm2 startup`。如果服务器重启后任务没有自动恢复，登录相同系统
+用户执行：
 
 ```bash
-pm2 restart codex-proxy --update-env
+pm2 resurrect
 ```
 
-也可以在不重启进程的情况下重新加载：
-
-```bash
-curl -fsS -X POST http://127.0.0.1:8221/auth/reload \
-  -H "Authorization: Bearer $API_KEY"
-```
-
-## 验证
-
-在服务器读取 Key，避免把密钥写入 Shell 历史：
-
-```bash
-API_KEY="$(sed -n 's/^PROXY_API_KEY=//p' /home/collaborators/services/codex-proxy/.env)"
-BASE_URL=http://127.0.0.1:8221
-```
-
-健康检查：
-
-```bash
-curl -fsS "$BASE_URL/health"
-```
-
-未携带 Key 应返回 `401`：
-
-```bash
-curl -sS -o /dev/null -w '%{http_code}\n' "$BASE_URL/v1/models"
-```
-
-查询大模型列表：
-
-```bash
-curl -fsS "$BASE_URL/v1/models" \
-  -H "Authorization: Bearer $API_KEY"
-```
-
-调用 `gpt-5.6-sol`：
-
-```bash
-curl -fsS "$BASE_URL/v1/chat/completions" \
-  -H "Authorization: Bearer $API_KEY" \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "gpt-5.6-sol",
-    "messages": [{"role": "user", "content": "只回复：codex-proxy-8221-ok"}],
-    "stream": false
-  }'
-```
-
-外部访问地址：
-
-```text
-http://34.28.243.240:8221/v1
-```
-
-如果服务器本机验证成功但外部连接超时，需要在云平台防火墙中放行 TCP `8221`。生产环境建议仅允许可信来源 IP，并在公网入口前增加 HTTPS 反向代理。
-
-## 验收清单
-
-- PM2 任务 `codex-proxy` 为 `online`。
-- `0.0.0.0:8221` 监听成功。
-- `/health` 返回 HTTP `200` 且 `authenticated=true`。
-- `/v1/models` 不携带 Key 返回 HTTP `401`。
-- `/v1/models` 携带正确 Key 返回 HTTP `200`。
-- `/auth/account` 只返回当前 CLI 账号信息，不包含任何 token。
-- `gpt-5.6-sol` 实际调用成功。
+随后重新执行完整验收。

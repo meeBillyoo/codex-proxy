@@ -18,6 +18,7 @@ import { getReasoningReplayCache } from "../../proxy/reasoning-replay-cache.js";
 import { getWsPool } from "../../proxy/ws-pool.js";
 import { forwardCodexRateLimitHeaders } from "./codex-rate-limit-response-headers.js";
 import { relayCodexTurnState } from "./codex-turn-state.js";
+import { isWebSocketUpstreamResponse } from "../../proxy/upstream-transport-policy.js";
 
 export interface HandleStreamingOptions {
   c: Context;
@@ -88,6 +89,10 @@ export function handleStreaming(options: HandleStreamingOptions): Response {
   let streamCompletedWithoutError = false;
   const metadataCollector = createResponseMetadataCollector();
   const reasoningReplayCache = getReasoningReplayCache();
+  const canRecordResponseContinuity = isWebSocketUpstreamResponse(
+    response,
+    req.codexRequest.useWebSocket,
+  );
 
   return stream(c, async (s) => {
     let clientAborted = false;
@@ -110,6 +115,7 @@ export function handleStreaming(options: HandleStreamingOptions): Response {
       abortController.abort();
     });
     const recordStreamAffinity = (): void => {
+      if (!canRecordResponseContinuity) return;
       if (!capturedResponseId) return;
       if (!responseCompleted) return;
       affinityMap.record(

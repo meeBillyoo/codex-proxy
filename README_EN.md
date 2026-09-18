@@ -20,13 +20,17 @@ cd web && npm ci && cd ..
 npm run build
 
 export PROXY_API_KEY='replace-with-a-strong-random-secret'
-
-# Optional: force Responses over HTTP SSE when upstream WebSocket auth is unreliable.
-export CODEX_PROXY_DISABLE_WS=1
 export CODEX_PROXY_HOST=127.0.0.1
 export PORT=8080
 npm start
 ```
+
+Upstream Responses WebSocket is preferred by default. A request that does not
+depend on `previous_response_id` safely falls back to HTTP SSE when the upgrade
+or transport fails. Set `CODEX_PROXY_DISABLE_WS=1` only when the deployment
+network cannot use upstream WebSocket at all. In that mode full-history
+requests remain intact, while an explicit `previous_response_id` fails closed
+instead of silently losing conversation context.
 
 Open `http://127.0.0.1:8080/` and sign in with `PROXY_API_KEY`.
 

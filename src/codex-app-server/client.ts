@@ -102,12 +102,18 @@ function normalizeNotification(message: Record<string, unknown>): CodexAppNotifi
   };
 }
 
-function notificationThreadId(notification: CodexAppNotification): string | null {
+function notificationThreadId(
+  notification: CodexAppNotification,
+  turnThreads: ReadonlyMap<string, string>,
+): string | null {
   if (!isRecord(notification.params)) return null;
   const params = notification.params;
   if (typeof params.threadId === "string") return params.threadId;
   if (isRecord(params.thread) && typeof params.thread.id === "string") return params.thread.id;
-  if (isRecord(params.turn) && typeof params.turn.threadId === "string") return params.turn.threadId;
+  if (isRecord(params.turn)) {
+    if (typeof params.turn.threadId === "string") return params.turn.threadId;
+    if (typeof params.turn.id === "string") return turnThreads.get(params.turn.id) ?? null;
+  }
   return null;
 }
 
@@ -127,6 +133,7 @@ export class CodexAppServerClient implements CodexAppServerBridge {
   private notifications = new Map<string, AsyncNotificationQueue>();
   private connectPromise: Promise<void> | null = null;
   private initializePromise: Promise<void> | null = null;
+  private readonly turnThreads = new Map<string, string>();
 
   constructor(options: CodexAppServerClientOptions) {
     this.options = options;
@@ -145,21 +152,27 @@ export class CodexAppServerClient implements CodexAppServerBridge {
   }
 
   async startTurn(params: StartTurnParams): Promise<unknown> {
-    return this.request("turn/start", this.buildTurnParams(params));
+    const result = await this.request("turn/start", this.buildTurnParams(params));
+    if (isRecord(result) && isRecord(result.turn) && typeof result.turn.id === "string") {
+      this.turnThreads.set(result.turn.id, params.threadId);
+    }
+    return result;
   }
 
   async interruptTurn(threadId: string, turnId: string): Promise<unknown> {
     return this.request("turn/interrupt", { threadId, turnId });
   }
 
-  async *notificationsUntilTurnCompleted(threadId: string): AsyncIterable<CodexAppNotification> {
+  notificationsUntilTurnCompleted(threadId: string): AsyncIterable<CodexAppNotification> {
     const queue = this.getNotificationQueue(threadId);
-    while (true) {
-      const notification = await queue.next();
-      if (!notification) return;
-      yield notification;
-      if (isTerminalTurnNotification(notification.method)) return;
-    }
+    return (async function* () {
+      while (true) {
+        const notification = await queue.next();
+        if (!notification) return;
+        yield notification;
+        if (isTerminalTurnNotification(notification.method)) return;
+      }
+    })();
   }
 
   async *runTurn(params: StartTurnParams): AsyncIterable<CodexAppTurnStreamEvent> {
@@ -180,6 +193,7 @@ export class CodexAppServerClient implements CodexAppServerBridge {
   async close(): Promise<void> {
     for (const queue of this.notifications.values()) queue.close();
     this.notifications.clear();
+    this.turnThreads.clear();
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timeout);
       pending.reject(new Error(`Codex app-server client closed before request ${id} completed`));
@@ -389,7 +403,7 @@ export class CodexAppServerClient implements CodexAppServerBridge {
     }
     const notification = normalizeNotification(parsed);
     if (!notification) return;
-    const threadId = notificationThreadId(notification);
+    const threadId = notificationThreadId(notification, this.turnThreads);
     if (threadId) {
       this.notifications.get(threadId)?.push(notification);
     } else if (this.notifications.size === 1) {

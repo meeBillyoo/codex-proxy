@@ -4,6 +4,7 @@ import {
 } from "../../proxy/error-classification.js";
 import type { SessionAffinityMap } from "../../auth/session-affinity.js";
 import type { ProxyRequest } from "./proxy-handler-types.js";
+import { isUpstreamResponsesWebSocketEnabled } from "../../proxy/upstream-transport-policy.js";
 import { stripCodexErrorPrefix } from "./proxy-handler-utils.js";
 
 export type ProxyRetryRecoveryKind =
@@ -114,10 +115,6 @@ export function applyProxyRetryRecoveryDecision(
   request.codexRequest.turnState = undefined;
   // This path now applies only to an implicit chain, for which the proxy owns
   // a full request snapshot. Rebuild an owner on WebSocket when possible.
-  if (process.env.CODEX_PROXY_DISABLE_WS !== "1") {
-    request.codexRequest.useWebSocket = true;
-  } else {
-    request.codexRequest.useWebSocket = false;
-  }
+  request.codexRequest.useWebSocket = isUpstreamResponsesWebSocketEnabled();
   return true;
 }

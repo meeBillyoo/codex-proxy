@@ -54,6 +54,9 @@ describe("ConfigSchema", () => {
       enabled: false,
       app_server_url: "ws://127.0.0.1:4500",
       request_timeout_ms: 30000,
+      max_sessions: 50,
+      session_cleanup_interval_minutes: 10,
+      session_idle_ttl_hours: 24,
       auth: { type: "none" },
     });
   });

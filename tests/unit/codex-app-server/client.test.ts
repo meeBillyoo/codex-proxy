@@ -173,7 +173,7 @@ describe("CodexAppServerClient", () => {
       requestTimeoutMs: 1000,
     });
 
-    const events = client.notificationsUntilTurnCompleted();
+    const events = client.notificationsUntilTurnCompleted("thr_1");
     await client.startTurn({ threadId: "thr_1", text: "hello" });
 
     const received: string[] = [];
@@ -197,8 +197,8 @@ describe("CodexAppServerClient", () => {
           : "unknown";
         socket.send(JSON.stringify({ id: message.id, result: { turn: { id: label, status: "inProgress" } } }));
         setTimeout(() => {
-          socket.send(JSON.stringify({ method: "item/agentMessage/delta", params: { delta: label } }));
-          socket.send(JSON.stringify({ method: "turn/completed", params: { turn: { id: label, status: "completed" } } }));
+          socket.send(JSON.stringify({ method: "item/agentMessage/delta", params: { delta: label, threadId: label } }));
+          socket.send(JSON.stringify({ method: "turn/completed", params: { threadId: label, turn: { id: label, status: "completed" } } }));
         }, label === "thr_1" ? 20 : 0);
       }
     });
@@ -271,7 +271,7 @@ describe("CodexAppServerClient", () => {
     await client.listApps();
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    const events = client.notificationsUntilTurnCompleted();
+    const events = client.notificationsUntilTurnCompleted("thr_1");
     await client.startTurn({ threadId: "thr_1", text: "hello again" });
 
     const received: string[] = [];

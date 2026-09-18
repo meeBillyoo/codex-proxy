@@ -116,6 +116,7 @@ describe("implicit resume lifecycle", () => {
 
   it("applies eligible implicit resume and restores it on demand", () => {
     const request = makeProxyRequest();
+    request.codexRequest.useWebSocket = true;
     const snapshot = captureImplicitResumeRequestState(request);
     const lifecycle = createImplicitResumeLifecycle({
       request,
@@ -155,13 +156,49 @@ describe("implicit resume lifecycle", () => {
     expect(lifecycle.getUsageHint()).toBeUndefined();
     expect(request.codexRequest.previous_response_id).toBe("explicit-prev");
     expect(request.codexRequest.turnState).toBe("turn-original");
-    expect(request.codexRequest.useWebSocket).toBe(false);
+    expect(request.codexRequest.useWebSocket).toBe(true);
     expect(request.codexRequest.input).toBe(snapshot.input);
     expect(request.codexRequest.instructions).toBe("system-a");
   });
 
+  it("keeps the full input when upstream WebSocket transport is disabled", () => {
+    const request = makeProxyRequest();
+    request.codexRequest.useWebSocket = false;
+    const originalInput = request.codexRequest.input;
+    const lifecycle = createImplicitResumeLifecycle({
+      request,
+      snapshot: captureImplicitResumeRequestState(request),
+      affinityMap: makeAffinityLookup({ inputTokens: 123 }),
+      tag: "Test",
+      implicitPrevRespId: "resp_implicit",
+      continuationInputStart: 2,
+      resumeEvaluationInput: {
+        implicitPrevRespId: "resp_implicit",
+        continuationInputStart: 2,
+        inputLength: 3,
+        preferredEntryId: "entry-1",
+        currentInstructions: "system-a",
+        storedInstructionsHash: "c38ad4c6a125984c19638a6db37117192367b6cec1e73825a9f1c09d60a59a92",
+        requiredFunctionCallOutputIds: [],
+        storedFunctionCallIds: [],
+      },
+      acquiredEntryId: "entry-1",
+    });
+
+    lifecycle.activate();
+
+    expect(lifecycle.evaluation.active).toBe(true);
+    expect(lifecycle.isActive()).toBe(false);
+    expect(lifecycle.getUsageHint()).toBeUndefined();
+    expect(request.codexRequest.previous_response_id).toBe("explicit-prev");
+    expect(request.codexRequest.useWebSocket).toBe(false);
+    expect(request.codexRequest.input).toBe(originalInput);
+    expect(lifecycle.resumeReasonForAttempt()).toBe("websocket_disabled");
+  });
+
   it("logs and restores the full request when an active implicit WebSocket attempt fails", () => {
     const request = makeProxyRequest();
+    request.codexRequest.useWebSocket = true;
     const snapshot = captureImplicitResumeRequestState(request);
     const warn = vi.fn();
     const lifecycle = createImplicitResumeLifecycle({

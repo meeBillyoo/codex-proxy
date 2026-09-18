@@ -160,8 +160,12 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
     explicitPrevRespId: sessionContext.explicitPrevRespId,
     implicitPrevRespId: sessionContext.implicitPrevRespId,
     prevRespId: sessionContext.prevRespId,
-    resumeActive: implicitResume.evaluation.active,
-    resumeReason: implicitResume.evaluation.reason,
+    resumeActive: implicitResume.isActive(),
+    resumeReason: implicitResume.isActive()
+      ? implicitResume.evaluation.reason
+      : implicitResume.evaluation.active
+        ? "websocket_disabled"
+        : implicitResume.evaluation.reason,
     preferredEntryId: sessionContext.preferredEntryId,
   });
 

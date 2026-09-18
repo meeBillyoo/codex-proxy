@@ -1,4 +1,4 @@
-import type { Account } from "../../../shared/types";
+import type { Account, AccountQuotaWindow } from "../../../shared/types";
 import { useT } from "../../../shared/i18n/context";
 import type { ServerRuntime } from "../../../shared/hooks/use-status";
 
@@ -13,98 +13,217 @@ interface CodexAccountCardProps {
   runtime?: ServerRuntime | null;
   codexCliVersion?: string | null;
 }
-
-function formatNumber(value: number | undefined): string {
-  return new Intl.NumberFormat().format(value ?? 0);
+const num = (v?: number) => new Intl.NumberFormat().format(v ?? 0);
+function bytes(v?: number) {
+  if (!v || !Number.isFinite(v)) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let n = v,
+    i = 0;
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(i ? 1 : 0)} ${u[i]}`;
+}
+function remaining(w?: AccountQuotaWindow | null) {
+  if (!w) return null;
+  const v =
+    w.remaining_percent ??
+    (w.used_percent == null ? null : 100 - w.used_percent);
+  return v == null || !Number.isFinite(v)
+    ? null
+    : Math.max(0, Math.min(100, v));
+}
+function reset(v?: number | null) {
+  return v ? new Date(v * 1000).toLocaleString() : "—";
 }
 
-function formatBytes(value: number | undefined): string {
-  if (!value || !Number.isFinite(value)) return "—";
-  const units = ["B", "GB", "TB"];
-  let size = value;
-  let unit = 0;
-  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit++; }
-  return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
-}
-
-export function CodexAccountCard(props: CodexAccountCardProps) {
-  const t = useT();
-  const account = props.account;
-  const usage = account?.usage;
-
+export function CodexAccountCard(p: CodexAccountCardProps) {
+  const t = useT(),
+    a = p.account,
+    u = a?.usage,
+    r = p.runtime;
+  const usedMem = r ? r.memory_total_bytes - r.memory_free_bytes : undefined;
+  const usedDisk =
+    r?.disk_total_bytes && r.disk_free_bytes != null
+      ? r.disk_total_bytes - r.disk_free_bytes
+      : undefined;
+  const bar = (label: string, w: AccountQuotaWindow | null | undefined) => {
+    const left = remaining(w);
+    return (
+      <div class="rounded-xl border border-gray-100 p-4 dark:border-border-dark">
+        <div class="flex justify-between">
+          <span class="text-sm font-semibold text-slate-700 dark:text-text-main">
+            {label}
+          </span>
+          <span class="text-sm font-bold text-slate-800 dark:text-text-main">
+            {left == null ? "—" : `${left.toFixed(0)}%`}
+          </span>
+        </div>
+        <div
+          class="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-bg-dark"
+          role="progressbar"
+          aria-label={label}
+          aria-valuenow={left ?? 0}
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
+          <div
+            class={`h-full rounded-full ${left != null && left < 20 ? "bg-red-500" : left != null && left < 50 ? "bg-amber-500" : "bg-emerald-500"}`}
+            style={{ width: `${left ?? 0}%` }}
+          />
+        </div>
+        <div class="mt-2 text-xs text-slate-500 dark:text-text-dim">
+          {w ? `${t("resetsAt")}: ${reset(w.reset_at)}` : t("quotaUnavailable")}
+        </div>
+      </div>
+    );
+  };
+  const cells = (items: [string, string][]) =>
+    items.map(([label, value]) => (
+      <div
+        key={label}
+        class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"
+      >
+        <div class="text-xs text-slate-400">{label}</div>
+        <div class="mt-1 truncate text-sm font-semibold text-slate-700 dark:text-text-main">
+          {value}
+        </div>
+      </div>
+    ));
   return (
     <section class="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-border-dark dark:bg-card-dark md:p-6">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div class="flex items-center gap-2">
-            <span class={`size-2.5 rounded-full ${account?.status === "active" ? "bg-emerald-500" : "bg-amber-500"}`} />
-            <h2 class="text-base font-bold text-slate-800 dark:text-text-main">{t("codexCliAccount")}</h2>
+            <span
+              class={`size-2.5 rounded-full ${a?.status === "active" ? "bg-emerald-500" : "bg-amber-500"}`}
+            />
+            <h2 class="text-base font-bold text-slate-800 dark:text-text-main">
+              {t("codexCliAccount")}
+            </h2>
           </div>
-          <p class="mt-1 text-xs text-slate-500 dark:text-text-dim">{t("codexCliAccountDesc")}</p>
+          <p class="mt-1 text-xs text-slate-500 dark:text-text-dim">
+            {t("codexCliAccountDesc")}
+          </p>
         </div>
         <button
           type="button"
-          disabled={props.refreshing}
-          onClick={() => void props.onReload()}
-          class="inline-flex items-center justify-center rounded-lg bg-primary-action px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-primary-action-hover disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={p.refreshing}
+          onClick={() => void p.onReload()}
+          class="rounded-lg bg-primary-action px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
         >
-          {props.refreshing ? t("reloadingAuth") : t("reloadAuth")}
+          {p.refreshing ? t("reloadingAuth") : t("reloadAuth")}
         </button>
       </div>
-
       <div class="mt-5 grid gap-3 sm:grid-cols-2">
         <div class="rounded-xl bg-slate-50 p-4 dark:bg-bg-dark">
-        <div class="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">{t("authFile")}</div>
-        <code class="mt-1 block break-all text-xs text-slate-700 dark:text-text-main">{props.authFile || "~/.codex/auth.json"}</code>
+          <div class="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">
+            {t("authFile")}
+          </div>
+          <code class="mt-1 block break-all text-xs text-slate-700 dark:text-text-main">
+            {p.authFile || "~/.codex/auth.json"}
+          </code>
         </div>
         <div class="rounded-xl bg-slate-50 p-4 dark:bg-bg-dark">
-          <div class="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">{t("codexCliVersion")}</div>
-          <code class="mt-1 block text-sm font-semibold text-slate-700 dark:text-text-main">{props.codexCliVersion ?? "—"}</code>
+          <div class="text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">
+            {t("codexCliVersion")}
+          </div>
+          <code class="mt-1 block text-sm font-semibold text-slate-700 dark:text-text-main">
+            {p.codexCliVersion ?? "—"}
+          </code>
         </div>
       </div>
-
-      {props.loading ? (
-        <p class="mt-5 text-sm text-slate-500 dark:text-text-dim">{t("loadingAccounts")}</p>
-      ) : !account ? (
-        <div class="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-800/40 dark:bg-amber-950/20 dark:text-amber-300">
+      {p.loading ? (
+        <p class="mt-5 text-sm text-slate-500">{t("loadingAccounts")}</p>
+      ) : !a ? (
+        <div class="mt-5 rounded-xl bg-amber-50 p-4 text-sm text-amber-800">
           <p class="font-semibold">{t("noCliAccount")}</p>
           <p class="mt-1 text-xs">{t("runCodexLogin")}</p>
-          {props.error && <p class="mt-2 break-all font-mono text-[0.7rem] opacity-80">{props.error}</p>}
+          {p.error && (
+            <p class="mt-2 break-all font-mono text-[0.7rem]">{p.error}</p>
+          )}
         </div>
       ) : (
         <>
-          <dl class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark">
-              <dt class="text-[0.7rem] text-slate-400">{t("email")}</dt>
-              <dd class="mt-1 truncate text-sm font-semibold text-slate-700 dark:text-text-main">{account.email ?? "—"}</dd>
+          <section class="mt-6">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-text-main">
+              {t("codexAccountInfo")}
+            </h3>
+            <dl class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {cells([
+                [t("email"), a.email ?? "—"],
+                [t("plan"), a.planType ?? a.quota?.plan_type ?? "—"],
+                [t("totalRequests"), num(u?.request_count)],
+                [
+                  t("tokensUsed"),
+                  num((u?.input_tokens ?? 0) + (u?.output_tokens ?? 0)),
+                ],
+              ])}
+            </dl>
+            <div class="mt-4 text-xs text-slate-500">
+              {t("status")}: <strong>{a.status}</strong>
+              {p.lastUpdated && (
+                <span class="ml-5">
+                  {t("updatedAt")}: {p.lastUpdated.toLocaleTimeString()}
+                </span>
+              )}
             </div>
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark">
-              <dt class="text-[0.7rem] text-slate-400">{t("plan")}</dt>
-              <dd class="mt-1 text-sm font-semibold capitalize text-slate-700 dark:text-text-main">{account.planType ?? "—"}</dd>
+          </section>
+          <section class="mt-6 border-t border-gray-100 pt-5 dark:border-border-dark">
+            <h3 class="text-sm font-bold text-slate-800 dark:text-text-main">
+              {t("codexAccountQuota")}
+            </h3>
+            <div class="mt-3 grid gap-3 sm:grid-cols-2">
+              {bar(t("fiveHourLimit"), a.quota?.rate_limit)}
+              {bar(t("weeklyLimit"), a.quota?.secondary_rate_limit)}
             </div>
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark">
-              <dt class="text-[0.7rem] text-slate-400">{t("totalRequests")}</dt>
-              <dd class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{formatNumber(usage?.request_count)}</dd>
+            <div class="mt-3 grid gap-3 sm:grid-cols-3">
+              {cells([
+                [t("plan"), a.quota?.plan_type ?? a.planType ?? "—"],
+                [t("totalRequests"), num(u?.request_count)],
+                [
+                  t("totalQuota"),
+                  a.quota?.credits?.unlimited
+                    ? t("unlimited")
+                    : num(a.quota?.credits?.balance),
+                ],
+              ])}
             </div>
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark">
-              <dt class="text-[0.7rem] text-slate-400">{t("tokensUsed")}</dt>
-              <dd class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{formatNumber((usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0))}</dd>
-            </div>
-          </dl>
-          <div class="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-xs text-slate-500 dark:text-text-dim">
-            <span>{t("status")}: <strong class="text-slate-700 dark:text-text-main">{account.status}</strong></span>
-            <span>{t("accountId")}: <code class="text-slate-700 dark:text-text-main">{account.accountId ?? "—"}</code></span>
-            {account.expiresAt && <span>{t("expires")}: <strong class="text-slate-700 dark:text-text-main">{new Date(account.expiresAt).toLocaleString()}</strong></span>}
-            {props.lastUpdated && <span>{t("updatedAt")}: {props.lastUpdated.toLocaleTimeString()}</span>}
-          </div>
-          <div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("serverPlatform")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime ? `${props.runtime.platform} / ${props.runtime.arch}` : "—"}</div></div>
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("serverCpuLoad")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime ? `${props.runtime.cpu_count} · ${props.runtime.load_average[0]?.toFixed(2) ?? "—"}` : "—"}</div></div>
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("serverMemory")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime ? `${formatBytes(props.runtime.memory_total_bytes - props.runtime.memory_free_bytes)} / ${formatBytes(props.runtime.memory_total_bytes)}` : "—"}</div></div>
-            <div class="rounded-xl border border-gray-100 p-3 dark:border-border-dark"><div class="text-[0.7rem] text-slate-400">{t("nodeVersion")}</div><div class="mt-1 text-sm font-semibold text-slate-700 dark:text-text-main">{props.runtime?.node_version ?? "—"}</div></div>
-          </div>
+          </section>
         </>
       )}
+      <section class="mt-6 border-t border-gray-100 pt-5 dark:border-border-dark">
+        <h3 class="text-sm font-bold text-slate-800 dark:text-text-main">
+          {t("serverResources")}
+        </h3>
+        <div class="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {cells([
+            [t("serverName"), r?.server_name ?? "—"],
+            [t("serverIp"), r?.server_ip ?? "—"],
+            [t("systemVersion"), r?.system ?? "—"],
+            [t("processCount"), num(r?.process_count)],
+          ])}
+        </div>
+        <div class="mt-3 grid gap-3 sm:grid-cols-3">
+          {cells([
+            [
+              t("serverCpuLoad"),
+              r
+                ? `${r.cpu_count} · ${r.load_average[0]?.toFixed(2) ?? "—"}`
+                : "—",
+            ],
+            [
+              t("serverMemory"),
+              r ? `${bytes(usedMem)} / ${bytes(r.memory_total_bytes)}` : "—",
+            ],
+            [
+              t("diskUsage"),
+              r ? `${bytes(usedDisk)} / ${bytes(r.disk_total_bytes)}` : "—",
+            ],
+          ])}
+        </div>
+      </section>
     </section>
   );
 }

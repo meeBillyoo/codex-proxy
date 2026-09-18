@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { TlsTransport, TlsTransportResponse } from "@src/tls/transport.js";
 import type { CodexResponsesRequest } from "@src/proxy/codex-types.js";
+import { WebSocketHandshakeError } from "@src/proxy/ws-handshake-error.js";
 
 // Mock fingerprint — return minimal headers
 vi.mock("@src/fingerprint/manager.js", () => ({
@@ -523,13 +524,40 @@ describe("codex-api headers", () => {
       expect(transport.post).not.toHaveBeenCalled();
     });
 
+    it("retries a rejected WebSocket handshake over HTTP for a new request", async () => {
+      mockCreateWebSocketResponse.mockRejectedValue(
+        new WebSocketHandshakeError(401, JSON.stringify({ error: { message: "missing bearer" } })),
+      );
+
+      const api = await createApi();
+      const request = makeRequest({ useWebSocket: true });
+      const response = await api.createResponse(request);
+
+      expect(transport.post).toHaveBeenCalledOnce();
+      expect(JSON.parse(transport.lastBody!).useWebSocket).toBeUndefined();
+      expect(request.useWebSocket).toBe(false);
+      expect(response.headers.get("x-codex-proxy-upstream-transport")).toBe("http");
+    });
+
+    it("does not silently drop an explicit previous_response_id when WS is disabled", async () => {
+      const api = await createApi();
+
+      await expect(
+        api.createResponse(makeRequest({ useWebSocket: false, previous_response_id: "resp_prev" })),
+      ).rejects.toMatchObject({ name: "PreviousResponseWebSocketError" });
+      expect(transport.post).not.toHaveBeenCalled();
+    });
+
     it("没有 previous_response_id 时 WebSocket 失败仍可安全降级到 HTTP", async () => {
       mockCreateWebSocketResponse.mockRejectedValue(new Error("ws down"));
 
       const api = await createApi();
-      await api.createResponse(makeRequest({ useWebSocket: true }));
+      const request = makeRequest({ useWebSocket: true });
+      const response = await api.createResponse(request);
 
       expect(transport.post).toHaveBeenCalledOnce();
+      expect(request.useWebSocket).toBe(false);
+      expect(response.headers.get("x-codex-proxy-upstream-transport")).toBe("http");
       const body = JSON.parse(transport.lastBody!) as Record<string, unknown>;
       expect(body.previous_response_id).toBeUndefined();
       expect(body.useWebSocket).toBeUndefined();
@@ -584,4 +612,3 @@ describe("codex-api headers", () => {
     });
   });
 });
-
