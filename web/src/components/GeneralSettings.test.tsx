@@ -61,36 +61,27 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("GeneralSettings - allow_prerelease", () => {
-  it("renders allow_prerelease checkbox with default false", () => {
+describe("GeneralSettings", () => {
+  it("renders server settings and omits desktop-only update preferences", () => {
     render(<GeneralSettings />);
 
-    // Expand section first
-    const toggleButton = screen.getByText("generalSettings");
-    fireEvent.click(toggleButton);
-
-    const checkbox = document.getElementById("allow-prerelease") as HTMLInputElement;
-    expect(checkbox).not.toBeNull();
-    expect(checkbox.checked).toBe(false);
+    expect(screen.getByText("settingsCategoryService")).not.toBeNull();
+    expect(screen.getByText("settingsCategoryRequestUsage")).not.toBeNull();
+    expect(document.getElementById("allow-prerelease")).toBeNull();
   });
 
-  it("allows toggling allow_prerelease and saving the setting", async () => {
+  it("saves an exposed server setting", async () => {
     render(<GeneralSettings />);
 
-    // Expand section
-    const toggleButton = screen.getByText("generalSettings");
-    fireEvent.click(toggleButton);
-
-    const checkbox = document.getElementById("allow-prerelease") as HTMLInputElement;
-    fireEvent.click(checkbox);
-    expect(checkbox.checked).toBe(true);
+    const maxConcurrentInput = screen.getByDisplayValue("3") as HTMLInputElement;
+    fireEvent.input(maxConcurrentInput, { target: { value: "4" } });
+    expect(maxConcurrentInput.value).toBe("4");
 
     const saveButton = screen.getByTitle("settingSave");
-    expect(saveButton).not.toBeNull();
     fireEvent.click(saveButton);
 
     await waitFor(() => {
-      expect(mockSave).toHaveBeenCalledWith({ allow_prerelease: true });
+      expect(mockSave).toHaveBeenCalledWith({ max_concurrent_per_account: 4 });
     });
   });
 });

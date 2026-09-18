@@ -32,10 +32,6 @@ const configuredBaseUrl = process.env.OFFICIAL_AGENT_BASE_URL ?? "http://34.28.2
 const apiBaseUrl = configuredBaseUrl.replace(/\/+$/, "").replace(/\/v1$/, "");
 const apiKey = process.env.OFFICIAL_AGENT_API_KEY ?? process.env.PROXY_API_KEY;
 
-if (!apiKey) {
-  throw new Error("Set OFFICIAL_AGENT_API_KEY (or PROXY_API_KEY) before running this script");
-}
-
 const headers = {
   Authorization: `Bearer ${apiKey}`,
   "Content-Type": "application/json",
@@ -137,6 +133,13 @@ async function runTurn(session: Session, label: string, cancelImmediately: boole
 }
 
 async function main(): Promise<void> {
+  if (!apiKey) {
+    const message = "Set OFFICIAL_AGENT_API_KEY (or PROXY_API_KEY) to run the live session smoke test";
+    if (process.env.OFFICIAL_AGENT_REQUIRE_CONFIG === "1") throw new Error(message);
+    console.log(`[official-agent-test] SKIP: ${message}`);
+    return;
+  }
+
   console.log(`Testing Official Agent API at ${apiBaseUrl}`);
   const createdSessions: Session[] = [];
   try {

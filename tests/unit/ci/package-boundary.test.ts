@@ -93,7 +93,9 @@ describe("root package boundary", () => {
     expect(requireString(scripts, "test:integration")).toBe("vitest run tests/integration");
     expect(requireString(scripts, "build:lite")).toContain("scripts/portable/build-portable.mjs");
     expect(requireString(scripts, "pack:lite")).toBe("npm run build:lite");
-    expect(requireString(scripts, "test:lite")).toBe("node scripts/portable/test-portable.mjs");
+    expect(requireString(scripts, "test:lite")).toBe(
+      "npm run build:lite && node scripts/portable/test-portable.mjs --allow-partial-native-matrix",
+    );
     expect(requireString(scripts, "build:web")).toBe("cd web && npx vite build");
     expect(requireString(scripts, "build")).toBe("npm run build:web && tsc");
     expect(requireString(scripts, "typecheck:scripts")).toBe("tsc -p tsconfig.scripts.json");

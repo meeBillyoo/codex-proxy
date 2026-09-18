@@ -24,7 +24,7 @@
     "build:lite": "npm run build && node scripts/portable/build-server-bundle.mjs && node scripts/portable/build-portable.mjs",
     "build:lite:webview2": "node scripts/portable/build-webview2-host.mjs",
     "pack:lite": "npm run build:lite",
-    "test:lite": "node scripts/portable/test-portable.mjs",
+    "test:lite": "npm run build:lite && node scripts/portable/test-portable.mjs --allow-partial-native-matrix",
     "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "start": "node dist/index.js",
     "check-update": "tsx scripts/build/check-update.ts",

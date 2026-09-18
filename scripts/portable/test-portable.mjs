@@ -10,16 +10,27 @@ import {
 } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
-import { basename, delimiter, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const packageVersion = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
+const DEFAULT_ARCHIVE = join(
+  ROOT,
+  "portable-release",
+  `codex-proxy-${packageVersion}-no-node-lite-all-platforms.zip`,
+);
+const TEST_API_KEY = "portable-test-key";
 
 function parseArgs(argv) {
   const options = {
-    archive: null,
+    archive: DEFAULT_ARCHIVE,
     keep: false,
     requireWindowsExe: false,
     requireWebView2: false,
     requireLinuxX64Musl: false,
+    allowPartialNativeMatrix: false,
     testNativeLauncher: false,
     skipRuntime: false,
   };
@@ -29,6 +40,7 @@ function parseArgs(argv) {
     else if (arg === "--require-windows-exe") options.requireWindowsExe = true;
     else if (arg === "--require-webview2") options.requireWebView2 = true;
     else if (arg === "--require-linux-x64-musl") options.requireLinuxX64Musl = true;
+    else if (arg === "--allow-partial-native-matrix") options.allowPartialNativeMatrix = true;
     else if (arg === "--test-native-launcher") options.testNativeLauncher = true;
     else if (arg === "--skip-runtime") options.skipRuntime = true;
     else if (arg === "--archive") options.archive = argv[++i];
@@ -36,7 +48,6 @@ function parseArgs(argv) {
     else if (!arg.startsWith("-") && !options.archive) options.archive = arg;
     else throw new Error("Unknown option: " + arg);
   }
-  if (!options.archive) throw new Error("--archive is required");
   return { ...options, archive: resolve(options.archive) };
 }
 
@@ -74,7 +85,11 @@ function runSync(command, args, options = {}) {
 function testEnvironment(extra = {}) {
   const env = { ...process.env };
   delete env.PORT;
-  return { ...env, ...extra };
+  return { ...env, PROXY_API_KEY: TEST_API_KEY, ...extra };
+}
+
+function authenticatedFetch(url) {
+  return fetch(url, { headers: { Authorization: `Bearer ${TEST_API_KEY}` } });
 }
 
 function normalizeEntryName(name) {
@@ -250,19 +265,21 @@ function archiveContract(entries, extract, options) {
   // triple the release matrix produces. A cross-platform name collision could
   // otherwise silently overwrite one addon with another, and each CI job only
   // checks its own platform, so a missing platform would go unnoticed.
-  const REQUIRED_NATIVE_TARGETS = [
-    ["win32", "x64"],
-    ["darwin", "arm64"],
-    ["darwin", "x64"],
-    ["linux", "x64"],
-  ];
-  for (const [targetPlatform, targetArch] of REQUIRED_NATIVE_TARGETS) {
-    const targetSuffixes = nativeCandidates(targetPlatform, targetArch);
-    assert(
-      targetSuffixes.some((suffix) => nativeFiles.some((name) => name.includes(suffix))),
-      "Portable all-platforms archive is missing native addon for " +
-        targetPlatform + "/" + targetArch + "; found: " + nativeFiles.join(", "),
-    );
+  if (!options.allowPartialNativeMatrix) {
+    const requiredNativeTargets = [
+      ["win32", "x64"],
+      ["darwin", "arm64"],
+      ["darwin", "x64"],
+      ["linux", "x64"],
+    ];
+    for (const [targetPlatform, targetArch] of requiredNativeTargets) {
+      const targetSuffixes = nativeCandidates(targetPlatform, targetArch);
+      assert(
+        targetSuffixes.some((suffix) => nativeFiles.some((name) => name.includes(suffix))),
+        "Portable all-platforms archive is missing native addon for " +
+          targetPlatform + "/" + targetArch + "; found: " + nativeFiles.join(", "),
+      );
+    }
   }
 
   const hostFiles = [...files.keys()].filter(
@@ -508,7 +525,7 @@ async function serverSmoke(extract, outside) {
     const url = await waitForReady(processHandle, "portable server");
     const response = await fetch(url);
     assert(response.status === 200, "Portable server returned HTTP " + response.status + ", expected 200");
-    const diagnostics = await fetch(new URL("debug/diagnostics", url));
+    const diagnostics = await authenticatedFetch(new URL("debug/diagnostics", url));
     assert(diagnostics.ok, "Portable diagnostics returned HTTP " + diagnostics.status);
     const diagnosticsData = await diagnostics.json();
     assert(
@@ -550,7 +567,7 @@ async function launcherRuntimeSmoke(extract, outside, options) {
         : await waitForReady(processHandle, launcher.label + " server");
       const response = await fetch(url);
       assert(response.status === 200, launcher.label + " returned HTTP " + response.status + ", expected 200");
-      const diagnostics = await fetch(new URL("debug/diagnostics", url));
+      const diagnostics = await authenticatedFetch(new URL("debug/diagnostics", url));
       assert(diagnostics.ok, launcher.label + " diagnostics returned HTTP " + diagnostics.status);
       const diagnosticsData = await diagnostics.json();
       assert(
@@ -590,7 +607,7 @@ async function defaultDataModeSmoke(extract, outside, tempRoot) {
   );
   try {
     const url = await waitForReady(processHandle, "default data mode");
-    const diagnostics = await fetch(new URL("debug/diagnostics", url));
+    const diagnostics = await authenticatedFetch(new URL("debug/diagnostics", url));
     assert(diagnostics.ok, "Default data mode diagnostics returned HTTP " + diagnostics.status);
     const diagnosticsData = await diagnostics.json();
     assert(

@@ -7,7 +7,7 @@ npm test                # unit + integration + e2e (default suite)
 npm run test:unit       # unit tests only
 npm run test:e2e        # e2e tests only
 npm run test:integration # integration tests only
-npm run test:stress     # stress tests (separate config, 120s timeout)
+npm run test:stress     # dedicated stress tests, if present (separate config, 120s timeout)
 npm run test:real       # real upstream tests (requires running proxy)
 ```
 
@@ -40,7 +40,7 @@ tests/
 │   └── web/            # Theme, cache headers, add-account
 ├── integration/        # Multi-module workflows (6 files)
 ├── e2e/                # Full API contract tests (9 files)
-├── stress/             # Concurrency & rotation fairness (3 files, separate config)
+├── stress/             # Optional dedicated stress tests (separate config)
 ├── real/               # Real upstream tests (15 files, separate config)
 ├── bench/              # Benchmark scripts (manual, not vitest)
 │   ├── concurrency-bench.ts
@@ -64,7 +64,7 @@ tests/
 
 The default `npm run test:real` suite only exercises free-tier accounts. The following paths have never been validated against a real Plus/Team upstream and are covered by mocks/fixtures only — documented as accepted risk (#377):
 
-- **Secondary rate-limit rotation** — `secondary-quota.test.ts` stress scenarios use mocks only.
+- **Secondary rate-limit rotation** — unit tests use mocks only.
 - **Team/Plus plan model access** — e.g. `gpt-5.4` returns `400` on free accounts.
 - **Credits balance management** — `credits` is `null` for free accounts.
 - **Rate-limit (429) state handling** — cannot trigger a real 429 reliably.

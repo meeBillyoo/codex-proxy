@@ -139,7 +139,15 @@ modes, and runs the package from an unrelated working directory. It also
 checks the current host's native addon, the no-Node guidance, the server HTTP
 smoke path, browser URL forwarding, and the non-Windows WebView2 error:
 
-    npm run test:lite -- --archive portable-release/codex-proxy-2.0.77-no-node-lite-all-platforms.zip
+    npm run test:lite
+
+The default command builds and tests the archive for the current package
+version using the native addons available in the local checkout. It still
+requires and exercises the addon for the current host. To validate the full
+release matrix or test an existing archive explicitly, run the test script
+directly without `--allow-partial-native-matrix`:
+
+    node scripts/portable/test-portable.mjs --archive portable-release/codex-proxy-2.0.77-no-node-lite-all-platforms.zip
 
 On an isolated Windows runner, add `--test-native-launcher` to also start the
 native `codex-proxy.exe`. The native launcher uses a single-instance mutex, so
