@@ -76,6 +76,48 @@ export function quotaRemaining(window?: AccountQuotaWindow | null): number | nul
   return Math.max(0, Math.min(100, value));
 }
 
+const FIVE_HOUR_WINDOW_MAX_SECONDS = 6 * 60 * 60;
+const WEEKLY_WINDOW_MIN_SECONDS = 24 * 60 * 60;
+
+function hasWindowDuration(window?: AccountQuotaWindow | null): boolean {
+  return typeof window?.limit_window_seconds === "number" && window.limit_window_seconds > 0;
+}
+
+function isWeeklyWindow(window?: AccountQuotaWindow | null): boolean {
+  return hasWindowDuration(window) && window!.limit_window_seconds! >= WEEKLY_WINDOW_MIN_SECONDS;
+}
+
+function isFiveHourWindow(window?: AccountQuotaWindow | null): boolean {
+  return hasWindowDuration(window) && window!.limit_window_seconds! <= FIVE_HOUR_WINDOW_MAX_SECONDS;
+}
+
+/**
+ * The upstream API does not guarantee that `primary_window` is always the
+ * five-hour bucket. Some plans report their weekly bucket as the primary
+ * window and omit a usable secondary window. Classify by duration instead of
+ * assuming the response field position.
+ */
+export function resolveQuotaWindows(quota?: Account["quota"] | null): {
+  fiveHour: AccountQuotaWindow | null;
+  weekly: AccountQuotaWindow | null;
+} {
+  const primary = quota?.rate_limit ?? null;
+  const secondary = quota?.secondary_rate_limit ?? null;
+  const primaryIsWeekly = isWeeklyWindow(primary);
+  const primaryIsFiveHour = isFiveHourWindow(primary) || !hasWindowDuration(primary);
+  const secondaryIsWeekly = isWeeklyWindow(secondary);
+  const secondaryIsFiveHour = isFiveHourWindow(secondary);
+
+  return {
+    fiveHour: primaryIsWeekly
+      ? (secondaryIsFiveHour ? secondary : null)
+      : (primaryIsFiveHour ? primary : null),
+    weekly: primaryIsWeekly
+      ? primary
+      : (secondaryIsWeekly ? secondary : null),
+  };
+}
+
 function toneForPercentage(value: number | null, remaining: boolean): string {
   if (value == null) return "bg-slate-300 dark:bg-slate-600";
   const severity = remaining ? 100 - value : value;
@@ -163,6 +205,7 @@ function statusLabel(status: string, t: ReturnType<typeof useT>): string {
 
 export function OverviewPage(props: OverviewPageProps) {
   const t = useT();
+  const quotaWindows = resolveQuotaWindows(props.account?.quota);
   const usage = useUsageSummary();
   const resetCredits = useResetCredits();
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -239,8 +282,8 @@ export function OverviewPage(props: OverviewPageProps) {
 
         <Card title={t("quotaOverview")} description={t("quotaDescription")} icon="quota" class="xl:col-span-7">
           <div class="grid gap-3 sm:grid-cols-3">
-            <QuotaMeter label={t("fiveHourLimit")} window={account?.quota?.rate_limit} />
-            <QuotaMeter label={t("weeklyLimit")} window={account?.quota?.secondary_rate_limit} />
+            <QuotaMeter label={t("fiveHourLimit")} window={quotaWindows.fiveHour} />
+            <QuotaMeter label={t("weeklyLimit")} window={quotaWindows.weekly} />
             <div class="rounded-xl border border-slate-200/80 p-4 dark:border-border-dark">
               <span class="text-xs font-semibold text-slate-600 dark:text-text-dim">{t("resetCredits")}</span>
               <div class="mt-1.5 text-xl font-bold tabular-nums text-slate-900 dark:text-text-main">{availableResetCredits == null ? "—" : availableResetCredits}</div>

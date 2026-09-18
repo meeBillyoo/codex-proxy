@@ -1,4 +1,5 @@
 import type { Account, AccountQuotaWindow } from "../../../shared/types";
+import { resolveQuotaWindows } from "../pages/OverviewPage";
 import { useT } from "../../../shared/i18n/context";
 import type { ServerRuntime } from "../../../shared/hooks/use-status";
 
@@ -43,6 +44,7 @@ export function CodexAccountCard(p: CodexAccountCardProps) {
     a = p.account,
     u = a?.usage,
     r = p.runtime;
+  const quotaWindows = resolveQuotaWindows(a?.quota);
   const usedMem = r ? r.memory_total_bytes - r.memory_free_bytes : undefined;
   const usedDisk =
     r?.disk_total_bytes && r.disk_free_bytes != null
@@ -175,8 +177,8 @@ export function CodexAccountCard(p: CodexAccountCardProps) {
               {t("codexAccountQuota")}
             </h3>
             <div class="mt-3 grid gap-3 sm:grid-cols-2">
-              {bar(t("fiveHourLimit"), a.quota?.rate_limit)}
-              {bar(t("weeklyLimit"), a.quota?.secondary_rate_limit)}
+              {bar(t("fiveHourLimit"), quotaWindows.fiveHour)}
+              {bar(t("weeklyLimit"), quotaWindows.weekly)}
             </div>
             <div class="mt-3 grid gap-3 sm:grid-cols-3">
               {cells([

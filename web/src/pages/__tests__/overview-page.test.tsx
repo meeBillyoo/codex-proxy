@@ -22,7 +22,7 @@ vi.mock("../../../../shared/i18n/context", () => ({
   useT: hookMocks.useT,
 }));
 
-import { OverviewPage, quotaRemaining } from "../OverviewPage";
+import { OverviewPage, quotaRemaining, resolveQuotaWindows } from "../OverviewPage";
 
 const account: Account = {
   id: "codex-cli",
@@ -34,8 +34,8 @@ const account: Account = {
   planType: "pro",
   quota: {
     plan_type: "pro",
-    rate_limit: { used_percent: 27, reset_at: 1_800_000_000 },
-    secondary_rate_limit: { remaining_percent: 41, reset_at: 1_800_100_000 },
+    rate_limit: { used_percent: 27, reset_at: 1_800_000_000, limit_window_seconds: 5 * 60 * 60 },
+    secondary_rate_limit: { remaining_percent: 41, reset_at: 1_800_100_000, limit_window_seconds: 7 * 24 * 60 * 60 },
     reset_credits_available: 2,
   },
 };
@@ -134,5 +134,25 @@ describe("OverviewPage", () => {
     expect(quotaRemaining({ used_percent: 120 })).toBe(0);
     expect(quotaRemaining({ remaining_percent: 140 })).toBe(100);
     expect(quotaRemaining(null)).toBeNull();
+  });
+
+  it("uses the weekly primary window when the upstream reports it as the primary bucket", () => {
+    const windows = resolveQuotaWindows({
+      rate_limit: {
+        used_percent: 36,
+        remaining_percent: 64,
+        reset_at: 1_800_000_000,
+        limit_window_seconds: 7 * 24 * 60 * 60,
+      },
+      secondary_rate_limit: {
+        used_percent: 0,
+        remaining_percent: 100,
+        reset_at: null,
+        limit_window_seconds: null,
+      },
+    });
+
+    expect(quotaRemaining(windows.fiveHour)).toBeNull();
+    expect(quotaRemaining(windows.weekly)).toBe(64);
   });
 });
