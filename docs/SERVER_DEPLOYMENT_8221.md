@@ -105,6 +105,9 @@ set -a
 . /home/collaborators/services/codex-proxy/.env
 set +a
 
+# Work around upstream Responses WebSocket 401s by using HTTP SSE.
+export CODEX_PROXY_DISABLE_WS=1
+
 export NODE_ENV=production
 export PORT=8221
 export CODEX_PROXY_HOST=0.0.0.0
@@ -180,6 +183,7 @@ npx tsc
 set -a
 . /home/collaborators/services/codex-proxy/.env
 set +a
+export CODEX_PROXY_DISABLE_WS=1
 export NODE_ENV=production
 export PORT=8221
 export CODEX_PROXY_HOST=0.0.0.0

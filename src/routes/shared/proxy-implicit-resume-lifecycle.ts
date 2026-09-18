@@ -114,7 +114,7 @@ export function createImplicitResumeLifecycle(
       restore();
       // Rebuild a response-owner chain on a pooled WS. If WS connection setup
       // itself fails, CodexApi may still fall back to HTTP with full input.
-      request.codexRequest.useWebSocket = true;
+      request.codexRequest.useWebSocket = process.env.CODEX_PROXY_DISABLE_WS !== "1";
       request.codexRequest.previous_response_id = undefined;
       request.codexRequest.turnState = snapshot.turnState;
       return true;

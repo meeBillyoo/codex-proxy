@@ -249,6 +249,22 @@ describe("client-facing WebSocket on /v1/responses (issue #681)", () => {
     ws.close();
   });
 
+  it("disables the upstream WebSocket when CODEX_PROXY_DISABLE_WS is set", async () => {
+    process.env.CODEX_PROXY_DISABLE_WS = "1";
+    try {
+      const { ws } = await connectClient(port, "Bearer master-key");
+      const received = receiveJsonFrames(ws, 3);
+      ws.send(RESPONSE_CREATE_BODY);
+      await received;
+
+      const req = capturedCodexRequest as Record<string, unknown>;
+      expect(req.useWebSocket).toBeUndefined();
+      ws.close();
+    } finally {
+      delete process.env.CODEX_PROXY_DISABLE_WS;
+    }
+  });
+
   it("supports multiple sequential response.create frames on one socket", async () => {
     const { ws } = await connectClient(port, "Bearer master-key");
 

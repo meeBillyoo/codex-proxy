@@ -114,7 +114,10 @@ export function applyProxyRetryRecoveryDecision(
   request.codexRequest.turnState = undefined;
   // This path now applies only to an implicit chain, for which the proxy owns
   // a full request snapshot. Rebuild an owner on WebSocket when possible.
-  request.codexRequest.useWebSocket = true;
+  if (process.env.CODEX_PROXY_DISABLE_WS !== "1") {
+    request.codexRequest.useWebSocket = true;
+  } else {
+    request.codexRequest.useWebSocket = false;
+  }
   return true;
 }
-

@@ -134,7 +134,12 @@ export function createResponsesRoutes(
       store: false,
     };
 
-    codexRequest.useWebSocket = true;
+    // Some upstream account/auth combinations reject the Responses WebSocket
+    // handshake with a misleading 401 (missing bearer). Keep the existing WS
+    // path available while allowing deployments to force HTTP SSE.
+    if (process.env.CODEX_PROXY_DISABLE_WS !== "1") {
+      codexRequest.useWebSocket = true;
+    }
     const forcedReview = c.req.path === "/v1/responses/review" || c.req.path === "/responses/review";
     const openAiSubagent =
       forcedReview

@@ -33,6 +33,9 @@ test -f "${CODEX_HOME:-$HOME/.codex}/auth.json" && echo "Codex CLI 已登录"
 
 ```bash
 export PROXY_API_KEY='替换为高强度随机密钥'
+
+# 如果上游 Responses WebSocket 握手返回 401，可强制使用 HTTP SSE
+export CODEX_PROXY_DISABLE_WS=1
 export CODEX_PROXY_HOST=127.0.0.1
 export PORT=8080
 npm start

@@ -20,6 +20,9 @@ cd web && npm ci && cd ..
 npm run build
 
 export PROXY_API_KEY='replace-with-a-strong-random-secret'
+
+# Optional: force Responses over HTTP SSE when upstream WebSocket auth is unreliable.
+export CODEX_PROXY_DISABLE_WS=1
 export CODEX_PROXY_HOST=127.0.0.1
 export PORT=8080
 npm start
