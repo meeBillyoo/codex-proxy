@@ -20,6 +20,8 @@ export interface UsageSummary {
   total_request_count: number;
   total_accounts: number;
   active_accounts: number;
+  /** Earliest local collection timestamp; not a subscription billing date. */
+  tracking_started_at: string | null;
 }
 
 export interface UsageDataPoint {
@@ -64,7 +66,7 @@ export function useUsageSummary(refreshIntervalMs = 30_000) {
     return () => clearInterval(id);
   }, [load, refreshIntervalMs]);
 
-  return { summary, loading };
+  return { summary, loading, reload: load };
 }
 
 export function useUsageHistory(granularity: Granularity, hours: UsageHistoryRange, refreshIntervalMs = 60_000) {

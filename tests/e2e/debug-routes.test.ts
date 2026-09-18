@@ -141,6 +141,15 @@ describe("GET /health", () => {
         used_slots: number;
         available_slots: number;
       };
+      runtime: {
+        public_ip: string | null;
+        os_type: string;
+        os_version: string;
+        cpu_usage_percent: number | null;
+        memory_usage_percent: number | null;
+        disk_usage_percent: number | null;
+        node_version: string;
+      };
     };
 
     expect(body.authenticated).toBe(true);
@@ -150,6 +159,13 @@ describe("GET /health", () => {
     expect(body.concurrency.total_slots).toBe(3);
     expect(body.concurrency.used_slots).toBe(1);
     expect(body.concurrency.available_slots).toBe(2);
+    expect(body.runtime.public_ip).toBeNull();
+    expect(body.runtime.os_type).toBeTruthy();
+    expect(body.runtime.os_version).toBeTruthy();
+    expect(body.runtime.cpu_usage_percent).toSatisfy((value: number | null) => value == null || (value >= 0 && value <= 100));
+    expect(body.runtime.memory_usage_percent).toSatisfy((value: number | null) => value != null && value >= 0 && value <= 100);
+    expect(body.runtime.disk_usage_percent).toSatisfy((value: number | null) => value == null || (value >= 0 && value <= 100));
+    expect(body.runtime.node_version).toContain("v");
   });
 });
 

@@ -36,6 +36,7 @@ const summary: UsageSummary = {
   total_request_count: 222_000,
   total_accounts: 5,
   active_accounts: 2,
+  tracking_started_at: "2026-05-01T00:00:00.000Z",
 };
 
 const windowPoints: UsageDataPoint[] = [

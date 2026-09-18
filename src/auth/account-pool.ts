@@ -24,6 +24,7 @@ interface PersistedAccountState {
   usage: AccountUsage;
   cachedQuota: CodexQuota | null;
   quotaFetchedAt: string | null;
+  trackingStartedAt?: string;
 }
 
 export interface CliAccountReloadResult {
@@ -67,6 +68,7 @@ function loadState(): PersistedAccountState {
       usage: { ...emptyUsage(), ...(parsed.usage ?? {}) },
       cachedQuota: parsed.cachedQuota ?? null,
       quotaFetchedAt: parsed.quotaFetchedAt ?? null,
+      trackingStartedAt: parsed.trackingStartedAt,
     };
   } catch (error) {
     console.warn(`[Auth] Failed to read ${STATE_FILE}: ${error instanceof Error ? error.message : error}`);
@@ -109,7 +111,7 @@ export class AccountPool {
       planType: profile?.chatgpt_plan_type ?? null,
       status: isTokenExpired(token) ? "expired" : "active",
       usage: prior?.usage ?? this.state.usage,
-      addedAt: prior?.addedAt ?? new Date().toISOString(),
+      addedAt: prior?.addedAt ?? this.state.trackingStartedAt ?? new Date().toISOString(),
       cachedQuota: prior?.cachedQuota ?? this.state.cachedQuota,
       quotaFetchedAt: prior?.quotaFetchedAt ?? this.state.quotaFetchedAt,
       quotaVerifyRequired: prior?.quotaVerifyRequired,
@@ -399,7 +401,13 @@ export class AccountPool {
     const tmpPath = `${filePath}.tmp`;
     try {
       mkdirSync(dirname(filePath), { recursive: true });
-      writeFileSync(tmpPath, JSON.stringify({ version: 1, usage: entry.usage, cachedQuota: entry.cachedQuota, quotaFetchedAt: entry.quotaFetchedAt } satisfies PersistedAccountState));
+      writeFileSync(tmpPath, JSON.stringify({
+        version: 1,
+        usage: entry.usage,
+        cachedQuota: entry.cachedQuota,
+        quotaFetchedAt: entry.quotaFetchedAt,
+        trackingStartedAt: entry.addedAt,
+      } satisfies PersistedAccountState));
       renameSync(tmpPath, filePath);
     } catch (error) {
       console.error(`[Auth] Failed to persist ${STATE_FILE}: ${error instanceof Error ? error.message : error}`);

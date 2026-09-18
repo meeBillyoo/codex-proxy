@@ -11,6 +11,63 @@ import { getTransportInfo } from "../../tls/transport.js";
 import { getProxyUrl } from "../../tls/proxy.js";
 import { isLocalhostRequest } from "../../utils/is-localhost.js";
 
+const PUBLIC_IP_CACHE_MS = 60 * 60 * 1000;
+let publicIpCache: { value: string | null; expiresAt: number } | null = null;
+let publicIpRequest: Promise<string | null> | null = null;
+
+function percentage(used: number, total: number): number | null {
+  if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return null;
+  return Math.max(0, Math.min(100, Number(((used / total) * 100).toFixed(1))));
+}
+
+async function sampleCpuUsage(): Promise<number | null> {
+  const read = () => os.cpus().reduce(
+    (totals, cpu) => {
+      const total = Object.values(cpu.times).reduce((sum, value) => sum + value, 0);
+      totals.idle += cpu.times.idle;
+      totals.total += total;
+      return totals;
+    },
+    { idle: 0, total: 0 },
+  );
+  const before = read();
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+  const after = read();
+  const totalDelta = after.total - before.total;
+  const idleDelta = after.idle - before.idle;
+  return percentage(totalDelta - idleDelta, totalDelta);
+}
+
+async function getPublicIp(): Promise<string | null> {
+  if (process.env.NODE_ENV === "test" || process.env.VITEST) return null;
+  if (publicIpCache && publicIpCache.expiresAt > Date.now()) return publicIpCache.value;
+  if (publicIpRequest) return publicIpRequest;
+
+  publicIpRequest = (async () => {
+    try {
+      const response = await fetch("https://api.ipify.org?format=json", {
+        signal: AbortSignal.timeout(2_000),
+      });
+      if (!response.ok) return null;
+      const data = await response.json() as { ip?: unknown };
+      return typeof data.ip === "string" && data.ip.trim() ? data.ip.trim() : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  try {
+    const value = await publicIpRequest;
+    publicIpCache = {
+      value,
+      expiresAt: Date.now() + (value ? PUBLIC_IP_CACHE_MS : 5 * 60 * 1000),
+    };
+    return value;
+  } finally {
+    publicIpRequest = null;
+  }
+}
+
 export function createHealthRoutes(accountPool: AccountPool): Hono {
   const app = new Hono();
 
@@ -39,6 +96,12 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
     try {
       processCount = execFileSync("ps", ["-e", "-o", "pid="], { encoding: "utf8", timeout: 1000 }).trim().split("\n").filter(Boolean).length || 1;
     } catch {}
+    const memoryTotalBytes = os.totalmem();
+    const memoryFreeBytes = os.freemem();
+    const [cpuUsagePercent, publicIp] = await Promise.all([
+      sampleCpuUsage(),
+      getPublicIp(),
+    ]);
     return c.json({
       status: "ok",
       authenticated,
@@ -55,16 +118,22 @@ export function createHealthRoutes(accountPool: AccountPool): Hono {
       runtime: {
         server_name: os.hostname(),
         server_ip: serverIp,
+        public_ip: publicIp,
         system: `${os.platform()} ${os.release()}`,
+        os_type: os.type(),
+        os_version: os.release(),
         node_version: process.version,
         platform: process.platform,
         arch: process.arch,
         cpu_count: os.cpus().length,
+        cpu_usage_percent: cpuUsagePercent,
         load_average: os.loadavg(),
-        memory_total_bytes: os.totalmem(),
-        memory_free_bytes: os.freemem(),
+        memory_total_bytes: memoryTotalBytes,
+        memory_free_bytes: memoryFreeBytes,
+        memory_usage_percent: percentage(memoryTotalBytes - memoryFreeBytes, memoryTotalBytes),
         disk_total_bytes: disk.total_bytes,
         disk_free_bytes: disk.free_bytes,
+        disk_usage_percent: percentage(disk.total_bytes - disk.free_bytes, disk.total_bytes),
         process_count: processCount,
       },
       codex_cli: { version: cliVersion },

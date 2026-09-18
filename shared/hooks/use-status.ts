@@ -19,16 +19,22 @@ export interface ModelFamily {
 export interface ServerRuntime {
   server_name?: string | null;
   server_ip?: string | null;
+  public_ip?: string | null;
   system?: string | null;
+  os_type?: string | null;
+  os_version?: string | null;
   node_version: string;
   platform: string;
   arch: string;
   cpu_count: number;
+  cpu_usage_percent?: number | null;
   load_average: number[];
   memory_total_bytes: number;
   memory_free_bytes: number;
+  memory_usage_percent?: number | null;
   disk_total_bytes?: number;
   disk_free_bytes?: number;
+  disk_usage_percent?: number | null;
   process_count?: number;
 }
 
@@ -107,32 +113,40 @@ export function useStatus() {
     }
   }, []);
 
+  const refreshHealth = useCallback(async () => {
+    try {
+      const healthResp = await fetch("/health");
+      if (!healthResp.ok) return;
+      const healthData = await healthResp.json() as { uptime_seconds?: unknown; runtime?: ServerRuntime; codex_cli?: { version?: string | null } };
+      if (typeof healthData.uptime_seconds === "number" && Number.isFinite(healthData.uptime_seconds)) {
+        setUptimeSeconds(Math.max(0, Math.floor(healthData.uptime_seconds)));
+      }
+      if (healthData.runtime) setRuntime(healthData.runtime);
+      setCodexCliVersion(healthData.codex_cli?.version ?? null);
+    } catch (err) {
+      console.error("Health status load error:", err);
+    }
+  }, []);
+
   const isInitialRef = useRef(true);
 
   useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let modelIntervalId: ReturnType<typeof setInterval> | null = null;
     const uptimeIntervalId = setInterval(() => {
       setUptimeSeconds((previous) => (previous === null ? null : previous + 30));
     }, 30_000);
+    const healthIntervalId = setInterval(() => { void refreshHealth(); }, 15_000);
 
     async function loadStatus() {
       try {
         setBaseUrl(`${window.location.origin}/v1`);
-        const healthResp = await fetch("/health");
-        if (healthResp.ok) {
-          const healthData = await healthResp.json() as { uptime_seconds?: unknown; runtime?: ServerRuntime; codex_cli?: { version?: string | null } };
-          if (typeof healthData.uptime_seconds === "number" && Number.isFinite(healthData.uptime_seconds)) {
-            setUptimeSeconds(Math.max(0, Math.floor(healthData.uptime_seconds)));
-          }
-          if (healthData.runtime) setRuntime(healthData.runtime);
-          setCodexCliVersion(healthData.codex_cli?.version ?? null);
-        }
+        await refreshHealth();
         const isInitial = isInitialRef.current;
         isInitialRef.current = false;
         await fetchModels(isInitial);
 
         // Refresh model list every 60s to pick up dynamic backend changes
-        intervalId = setInterval(() => { fetchModels(false); }, 60_000);
+        modelIntervalId = setInterval(() => { fetchModels(false); }, 60_000);
       } catch (err) {
         console.error("Status load error:", err);
       }
@@ -140,10 +154,11 @@ export function useStatus() {
     loadStatus();
 
     return () => {
-      if (intervalId) clearInterval(intervalId);
+      if (modelIntervalId) clearInterval(modelIntervalId);
+      clearInterval(healthIntervalId);
       clearInterval(uptimeIntervalId);
     };
-  }, [fetchModels]);
+  }, [fetchModels, refreshHealth]);
 
   // Build model families — group catalog by family, excluding tier variants
   const modelFamilies = useMemo((): ModelFamily[] => {
@@ -178,6 +193,7 @@ export function useStatus() {
     uptimeSeconds,
     runtime,
     codexCliVersion,
+    refreshHealth,
     modelFamilies,
     modelCatalog,
   };

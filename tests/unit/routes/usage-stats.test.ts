@@ -18,6 +18,7 @@ function createMockPool(totals: { input_tokens: number; output_tokens: number; r
     getCurrentEntry: () => ({
         id: "e1",
         status: "active",
+        addedAt: "2026-01-02T03:04:05.000Z",
         usage: { ...totals, cached_tokens: totals.cached_tokens ?? 0 },
       }),
   } as unknown as AccountPool;
@@ -48,6 +49,7 @@ describe("usage stats routes", () => {
       expect(body.total_request_count).toBe(20);
       expect(body.total_accounts).toBe(1);
       expect(body.active_accounts).toBe(1);
+      expect(body.tracking_started_at).toBe("2026-01-02T03:04:05.000Z");
     });
 
     it("exposes total_cached_tokens for cache-hit-rate computation", async () => {

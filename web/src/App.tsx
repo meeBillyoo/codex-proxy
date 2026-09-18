@@ -5,7 +5,7 @@ import { I18nProvider } from "../../shared/i18n/context";
 import { ThemeProvider } from "../../shared/theme/context";
 import { Header } from "./components/Header";
 import { UpdateModal } from "./components/UpdateModal";
-import { CodexAccountCard } from "./components/CodexAccountCard";
+import { OverviewPage } from "./pages/OverviewPage";
 import { SettingsTab } from "./components/SettingsTab";
 import { Footer } from "./components/Footer";
 import { Sidebar } from "./components/Sidebar";
@@ -139,7 +139,7 @@ function Dashboard() {
 
           {activeTab === "" && (
             <div class="flex flex-col gap-6">
-              <CodexAccountCard
+              <OverviewPage
                 account={accounts.account}
                 authFile={accounts.authFile}
                 loading={accounts.loading}
@@ -147,6 +147,7 @@ function Dashboard() {
                 lastUpdated={accounts.lastUpdated}
                 error={accounts.error}
                 onReload={accounts.reload}
+                onRefreshHealth={status.refreshHealth}
                 runtime={status.runtime}
                 codexCliVersion={status.codexCliVersion}
               />

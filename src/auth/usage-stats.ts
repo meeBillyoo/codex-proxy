@@ -87,6 +87,8 @@ export interface UsageSummary {
   total_request_count: number;
   total_accounts: number;
   active_accounts: number;
+  /** Earliest locally retained usage/account timestamp; not a subscription billing date. */
+  tracking_started_at: string | null;
 }
 
 // ── Constants ──────────────────────────────────────────────────────
@@ -321,6 +323,12 @@ export class UsageStatsStore {
   /** Get current cumulative summary (baseline + live pool data). */
   getSummary(pool: AccountPool): UsageSummary {
     const live = this.poolTotals(pool);
+    const trackingCandidates = [
+      pool.getCurrentEntry()?.addedAt,
+      ...this.snapshots.map((snapshot) => snapshot.timestamp),
+    ]
+      .filter((value): value is string => typeof value === "string" && Number.isFinite(new Date(value).getTime()))
+      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
 
     return {
       total_input_tokens: this.baseline.input_tokens + live.input_tokens,
@@ -334,6 +342,7 @@ export class UsageStatsStore {
       total_request_count: this.baseline.request_count + live.request_count,
       total_accounts: live.total_accounts,
       active_accounts: live.active_accounts,
+      tracking_started_at: trackingCandidates[0] ?? null,
     };
   }
 

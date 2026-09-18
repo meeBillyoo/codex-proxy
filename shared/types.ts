@@ -44,6 +44,7 @@ export interface Account {
   email: string | null;
   accountId?: string | null;
   expiresAt?: string | null;
+  addedAt?: string | null;
   label?: string;
   codexFingerprintMode?: "off" | "session";
   status: string;
