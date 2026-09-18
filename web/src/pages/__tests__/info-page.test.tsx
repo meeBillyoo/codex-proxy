@@ -12,12 +12,8 @@ vi.mock("../../components/ApiConfig", () => ({
   ApiConfig: () => <div data-testid="api-config">ApiConfig Mock</div>,
 }));
 
-vi.mock("../../components/AnthropicSetup", () => ({
-  AnthropicSetup: () => <div data-testid="anthropic-setup">AnthropicSetup Mock</div>,
-}));
-
-vi.mock("../../components/CodeExamples", () => ({
-  CodeExamples: () => <div data-testid="code-examples">CodeExamples Mock</div>,
+vi.mock("../../components/ApiEndpoints", () => ({
+  ApiEndpoints: () => <div data-testid="api-endpoints">ApiEndpoints Mock</div>,
 }));
 
 vi.mock("../../components/TestConnection", () => ({
@@ -29,7 +25,7 @@ afterEach(() => {
 });
 
 describe("InfoPage", () => {
-  it("renders all informational and client configuration cards", () => {
+  it("renders API configuration, endpoint tests, and connection diagnostics", () => {
     render(
       <InfoPage
         baseUrl="http://127.0.0.1:8080"
@@ -46,8 +42,7 @@ describe("InfoPage", () => {
     );
 
     expect(screen.getByTestId("api-config")).not.toBeNull();
-    expect(screen.getByTestId("anthropic-setup")).not.toBeNull();
-    expect(screen.getByTestId("code-examples")).not.toBeNull();
+    expect(screen.getByTestId("api-endpoints")).not.toBeNull();
     expect(screen.getByTestId("test-connection")).not.toBeNull();
   });
 });

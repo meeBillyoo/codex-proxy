@@ -65,10 +65,11 @@ turn 的 SSE 流首先发送 `official_agent.turn_started`，其中包含本地 
 | GET | `/auth/dashboard-status` | Dashboard session 状态 |
 | GET | `/health` | 服务与当前账号状态 |
 | GET/POST | `/admin/general-settings` | 非敏感运行设置 |
+| GET | `/admin/api-config` | 当前 API 密钥（仅已登录 Dashboard 会话） |
 | GET/POST | `/admin/quota-settings` | 额度刷新和预警设置 |
 | GET | `/admin/usage-stats/summary` | 用量汇总 |
 | GET | `/admin/usage-stats/history` | 用量历史 |
 | GET | `/admin/logs` | 请求日志 |
 | GET | `/admin/error-logs` | 错误日志 |
 
-接口不会返回 CLI access token、refresh token、ID token 或 `PROXY_API_KEY`。
+接口不会返回 CLI access token、refresh token 或 ID token。已登录的 Dashboard 可通过受会话保护的 `/admin/api-config` 读取当前 `PROXY_API_KEY`，用于接口页展示和连通性测试。

@@ -77,7 +77,7 @@ export function selectDefaultModel(catalog: CatalogModel[], ids: string[]): stri
 
 export function useStatus() {
   const [baseUrl, setBaseUrl] = useState("Loading...");
-  const [apiKey] = useState("PROXY_API_KEY");
+  const [apiKey, setApiKey] = useState("");
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [modelCatalog, setModelCatalog] = useState<CatalogModel[]>([]);
@@ -113,6 +113,17 @@ export function useStatus() {
     }
   }, []);
 
+  const fetchApiConfig = useCallback(async () => {
+    try {
+      const response = await fetch("/admin/api-config", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json() as { api_key?: unknown };
+      if (typeof data.api_key === "string") setApiKey(data.api_key);
+    } catch (err) {
+      console.error("API configuration load error:", err);
+    }
+  }, []);
+
   const refreshHealth = useCallback(async () => {
     try {
       const healthResp = await fetch("/health");
@@ -140,10 +151,13 @@ export function useStatus() {
     async function loadStatus() {
       try {
         setBaseUrl(`${window.location.origin}/v1`);
-        await refreshHealth();
         const isInitial = isInitialRef.current;
         isInitialRef.current = false;
-        await fetchModels(isInitial);
+        await Promise.all([
+          refreshHealth(),
+          fetchApiConfig(),
+          fetchModels(isInitial),
+        ]);
 
         // Refresh model list every 60s to pick up dynamic backend changes
         modelIntervalId = setInterval(() => { fetchModels(false); }, 60_000);
@@ -158,7 +172,7 @@ export function useStatus() {
       clearInterval(healthIntervalId);
       clearInterval(uptimeIntervalId);
     };
-  }, [fetchModels, refreshHealth]);
+  }, [fetchApiConfig, fetchModels, refreshHealth]);
 
   // Build model families — group catalog by family, excluding tier variants
   const modelFamilies = useMemo((): ModelFamily[] => {

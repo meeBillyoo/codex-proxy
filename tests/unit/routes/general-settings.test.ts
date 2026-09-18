@@ -122,6 +122,23 @@ function makeApp() {
   return createWebRoutes(mockPool, mockUsageStats);
 }
 
+describe("GET /admin/api-config", () => {
+  it("returns the active proxy API key for the authenticated dashboard", async () => {
+    const previousKey = process.env.PROXY_API_KEY;
+    process.env.PROXY_API_KEY = "current-proxy-key";
+
+    try {
+      const res = await makeApp().request("/admin/api-config");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(await res.json()).toEqual({ api_key: "current-proxy-key" });
+    } finally {
+      if (previousKey === undefined) delete process.env.PROXY_API_KEY;
+      else process.env.PROXY_API_KEY = previousKey;
+    }
+  });
+});
+
 describe("GET /admin/general-settings", () => {
   beforeEach(() => {
     vi.clearAllMocks();

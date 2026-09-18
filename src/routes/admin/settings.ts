@@ -48,6 +48,16 @@ function normalizeModelAliases(input: unknown): {
 export function createSettingsRoutes(): Hono {
   const app = new Hono();
 
+  // The dashboard is already protected by the HttpOnly session middleware.
+  // Expose the configured proxy key here so the API page can show and copy the
+  // exact credential that external clients must use.
+  app.get("/admin/api-config", (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json({
+      api_key: process.env.PROXY_API_KEY?.trim() ?? "",
+    });
+  });
+
   // --- General (server/tls) settings ---
 
   app.get("/admin/general-settings", (c) => {

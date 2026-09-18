@@ -1,6 +1,5 @@
 import { ApiConfig } from "../components/ApiConfig";
-import { AnthropicSetup } from "../components/AnthropicSetup";
-import { CodeExamples } from "../components/CodeExamples";
+import { ApiEndpoints } from "../components/ApiEndpoints";
 import { TestConnection } from "../components/TestConnection";
 import type { ModelFamily } from "../../../shared/hooks/use-status";
 
@@ -32,18 +31,10 @@ export function InfoPage(props: InfoPageProps) {
         selectedSpeed={props.selectedSpeed}
         onSpeedChange={props.onSpeedChange}
       />
-      <AnthropicSetup
+      <ApiEndpoints
         apiKey={props.apiKey}
-        selectedModel={props.selectedModel}
-        reasoningEffort={props.selectedEffort}
-        serviceTier={props.selectedSpeed}
-      />
-      <CodeExamples
-        baseUrl={props.baseUrl}
-        apiKey={props.apiKey}
-        model={props.selectedModel}
-        reasoningEffort={props.selectedEffort}
-        serviceTier={props.selectedSpeed}
+        defaultModel={props.selectedModel}
+        modelFamilies={props.modelFamilies}
       />
       <TestConnection />
     </div>

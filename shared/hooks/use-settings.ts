@@ -1,7 +1,4 @@
-/**
- * Dashboard requests authenticate with the HttpOnly dashboard session.
- * The ENV-only proxy key is intentionally never returned to browser code.
- */
+/** Dashboard settings requests authenticate with the HttpOnly dashboard session. */
 export function useSettings() {
   return { apiKey: null };
 }
