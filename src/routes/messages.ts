@@ -104,6 +104,7 @@ function makeAnthropicFormat(wantThinking: boolean): FormatAdapter {
         "The Codex CLI account is unavailable, expired, or rate-limited.",
       ),
     format429: (msg) => makeError("rate_limit_error", msg),
+    formatQuotaExhausted: (msg) => makeError("rate_limit_error", msg),
     formatError: (_status, msg) => makeError("api_error", msg),
     streamTranslator: ({
       api,

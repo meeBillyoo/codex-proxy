@@ -11,6 +11,7 @@ export function createMockFormatAdapter(overrides?: Partial<FormatAdapter>): For
     noAccountStatus: 503,
     formatNoAccount: vi.fn(() => ({ error: "no_account" })),
     format429: vi.fn((msg: string) => ({ error: "rate_limited", message: msg })),
+    formatQuotaExhausted: vi.fn((msg: string) => ({ error: "quota_exhausted", message: msg })),
     formatError: vi.fn((status: number, msg: string) => ({ error: "api_error", status, message: msg })),
     formatStreamError: vi.fn((_status: number, msg: string) => `event: response.failed\ndata: ${JSON.stringify({ error: { message: msg } })}\n\n`),
     streamTranslator: vi.fn(async function* (options: FormatStreamTranslatorOptions) {

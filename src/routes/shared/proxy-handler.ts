@@ -37,6 +37,7 @@ import { randomUUID } from "crypto";
 import {
   respondWithNoAccount,
   respondWithProxyError,
+  respondWithQuotaExhausted,
 } from "./proxy-error-response.js";
 import { createImplicitResumeLifecycle } from "./proxy-implicit-resume-lifecycle.js";
 import { captureImplicitResumeRequestState } from "./proxy-implicit-resume-request.js";
@@ -84,6 +85,9 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
 
   const acquired = acquireAccount(accountPool, req.codexRequest.model, fmt.tag);
   if (!acquired) {
+    if (accountPool.isQuotaBlocked(req.codexRequest.model)) {
+      return respondWithQuotaExhausted({ c, req, fmt });
+    }
     return respondWithNoAccount({ c, req, fmt });
   }
 

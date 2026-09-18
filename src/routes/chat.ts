@@ -51,6 +51,14 @@ function makeOpenAIFormat(
         code: "rate_limit_exceeded",
       },
     }),
+    formatQuotaExhausted: (msg) => ({
+      error: {
+        message: msg,
+        type: "rate_limit_error",
+        param: null,
+        code: "quota_exhausted",
+      },
+    }),
     formatError: (_status, msg) => ({
       error: {
         message: msg,

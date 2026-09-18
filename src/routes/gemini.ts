@@ -69,6 +69,7 @@ const GEMINI_FORMAT: FormatAdapter = {
       "UNAVAILABLE",
     ),
   format429: (msg) => makeError(429, msg, "RESOURCE_EXHAUSTED"),
+  formatQuotaExhausted: (msg) => makeError(429, msg, "RESOURCE_EXHAUSTED"),
   formatError: (status, msg) => makeError(status, msg),
   streamTranslator: ({ api, response, model, onUsage, onResponseId, onResponseCompleted, tupleSchema }) =>
     streamCodexToGemini(api, response, model, onUsage, onResponseId, tupleSchema, onResponseCompleted),

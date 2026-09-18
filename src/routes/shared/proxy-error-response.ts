@@ -32,6 +32,16 @@ export function respondWithNoAccount(options: RespondWithNoAccountOptions): Resp
   return c.json(fmt.formatNoAccount());
 }
 
+export function respondWithQuotaExhausted(options: RespondWithNoAccountOptions): Response {
+  const { c, req, fmt } = options;
+  const message = "The Codex CLI account quota is exhausted.";
+  if (canReturnStreamError(req, fmt)) {
+    return streamErrorResponse(c, fmt, 429, message);
+  }
+  c.status(429);
+  return c.json(fmt.formatQuotaExhausted(message));
+}
+
 export function respondWithProxyError(options: RespondWithProxyErrorOptions): Response {
   const { c, req, fmt, status, message, useFormat429 = false } = options;
   if (canReturnStreamError(req, fmt)) {

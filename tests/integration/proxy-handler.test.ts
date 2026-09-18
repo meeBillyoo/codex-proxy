@@ -167,6 +167,7 @@ function createMockAccountPool(overrides: Record<string, unknown> = {}) {
     syncRateLimitWindow: vi.fn(),
     markStatus: vi.fn(),
     getEntry: vi.fn(() => ({ email: "test@test.com" })),
+    isQuotaBlocked: vi.fn(() => false),
     recordEmptyResponse: vi.fn(),
     hasAvailableAccounts: vi.fn(() => true),
     getPoolSummary: vi.fn(() => ({
@@ -250,6 +251,25 @@ describe("proxy-handler integration", () => {
     expect(body).toEqual({ error: "no_account" });
     expect(fmt.formatNoAccount).toHaveBeenCalled();
     expect(accountPool.release).not.toHaveBeenCalled();
+  });
+
+  it("returns 429 quota_exhausted when cached quota blocks the account", async () => {
+    const accountPool = createMockAccountPool({
+      acquire: vi.fn(() => null),
+      isQuotaBlocked: vi.fn(() => true),
+    });
+    const fmt = createMockFormatAdapter();
+    const { app } = buildTestApp({ accountPool, fmt });
+
+    const res = await app.request("/test", { method: "POST" });
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({
+      error: "quota_exhausted",
+      message: "The Codex CLI account quota is exhausted.",
+    });
+    expect(fmt.formatQuotaExhausted).toHaveBeenCalledOnce();
+    expect(fmt.formatNoAccount).not.toHaveBeenCalled();
   });
 
   // 2. Non-streaming success

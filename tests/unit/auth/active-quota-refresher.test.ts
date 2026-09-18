@@ -1,8 +1,8 @@
 /**
- * Tests for issue #753 Bug 1 fix: preserveLearnedLocks must not let an
- * optimistic /usage answer clear a 429-learned lock whose reset_at is still
- * in the future — otherwise the exhausted account appears available again
- * and wastes a full payload upload on every cycle.
+ * Tests for issue #753 Bug 1 fix: ambiguous /usage answers must not clear a
+ * 429-learned lock whose reset_at is still in the future. An authoritative
+ * answer that explicitly reports allowed=true with remaining quota does clear
+ * the lock so stale local state cannot block an available account.
  */
 
 import { describe, it, expect } from "vitest";
@@ -28,7 +28,7 @@ function quota(overrides: Partial<CodexQuota> = {}): CodexQuota {
 }
 
 describe("preserveLearnedLocks", () => {
-  it("keeps a future primary lock when /usage reports available", () => {
+  it("keeps a future primary lock when /usage lacks an explicit remaining balance", () => {
     const existing = quota({
       rate_limit: {
         allowed: false,
@@ -45,6 +45,33 @@ describe("preserveLearnedLocks", () => {
     expect(merged.rate_limit.allowed).toBe(false);
     expect(merged.rate_limit.used_percent).toBe(100);
     expect(merged.rate_limit.reset_at).toBe(existing.rate_limit.reset_at);
+  });
+
+  it("clears a future primary lock when /usage explicitly reports remaining quota", () => {
+    const existing = quota({
+      rate_limit: {
+        allowed: false,
+        limit_reached: true,
+        used_percent: 100,
+        remaining_percent: 0,
+        reset_at: NOW + 28 * 24 * 3600,
+        limit_window_seconds: 3600,
+      },
+    });
+    const fresh = quota({
+      rate_limit: {
+        allowed: true,
+        limit_reached: false,
+        used_percent: 36,
+        remaining_percent: 64,
+        reset_at: NOW + 3600,
+        limit_window_seconds: 7 * 24 * 3600,
+      },
+    });
+
+    const merged = preserveLearnedLocks(existing, fresh);
+
+    expect(merged.rate_limit).toEqual(fresh.rate_limit);
   });
 
   it("unlocks once the lock reset_at has passed", () => {

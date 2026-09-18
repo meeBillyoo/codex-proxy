@@ -515,6 +515,14 @@ export const PASSTHROUGH_FORMAT: FormatAdapter = {
       message: msg,
     },
   }),
+  formatQuotaExhausted: (msg) => ({
+    type: "error",
+    error: {
+      type: "rate_limit_error",
+      code: "quota_exhausted",
+      message: msg,
+    },
+  }),
   formatError: (_status, msg) => ({
     type: "error",
     error: {

@@ -90,6 +90,7 @@ export interface FormatAdapter {
   noAccountStatus: StatusCode;
   formatNoAccount: () => unknown;
   format429: (message: string) => unknown;
+  formatQuotaExhausted: (message: string) => unknown;
   formatError: (status: number, message: string) => unknown;
   formatStreamError?: (status: number, message: string) => string;
   streamTranslator: (options: FormatStreamTranslatorOptions) => AsyncGenerator<string>;

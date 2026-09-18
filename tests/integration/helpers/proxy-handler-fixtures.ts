@@ -22,6 +22,7 @@ export function createMockAccountPool(overrides: Record<string, unknown> = {}) {
     syncRateLimitWindow: vi.fn(),
     markStatus: vi.fn(),
     getEntry: vi.fn(() => ({ email: "test@test.com" })),
+    isQuotaBlocked: vi.fn(() => false),
     recordEmptyResponse: vi.fn(),
     hasAvailableAccounts: vi.fn(() => true),
     getPoolSummary: vi.fn(() => ({

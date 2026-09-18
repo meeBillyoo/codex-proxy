@@ -54,6 +54,14 @@ const IMAGES_FORMAT: FormatAdapter = {
   noAccountStatus: 503,
   formatNoAccount: () => formatImagesError(503, "The Codex CLI account is unavailable, expired, or rate-limited."),
   format429: (message) => formatImagesError(429, message),
+  formatQuotaExhausted: (message) => ({
+    error: {
+      message,
+      type: "rate_limit_error",
+      param: null,
+      code: "quota_exhausted",
+    },
+  }),
   formatError: (status, message) => formatImagesError(status, message),
   async *streamTranslator() {
     throw new Error("Images generations does not support streaming responses");

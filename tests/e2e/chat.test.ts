@@ -426,6 +426,24 @@ describe("E2E: POST /v1/chat/completions", () => {
     }
   });
 
+  it("quota-blocked account: returns 429 quota_exhausted", async () => {
+    vi.spyOn(ctx.accountPool, "isAuthenticated").mockReturnValue(true);
+    vi.spyOn(ctx.accountPool, "acquire").mockReturnValue(null);
+    vi.spyOn(ctx.accountPool, "isQuotaBlocked").mockReturnValue(true);
+
+    const res = await chatRequest(defaultBody());
+
+    expect(res.status).toBe(429);
+    expect(await res.json()).toEqual({
+      error: {
+        message: "The Codex CLI account quota is exhausted.",
+        type: "rate_limit_error",
+        param: null,
+        code: "quota_exhausted",
+      },
+    });
+  });
+
   // ── Request validation ────────────────────────────────────────
 
   it("invalid JSON: returns 400 invalid_json", async () => {

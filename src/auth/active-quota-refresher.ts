@@ -166,7 +166,17 @@ export function preserveLearnedLocks(
     merged.reset_credits_available = existing.reset_credits_available;
   }
 
-  if (isFutureLock(existing?.rate_limit) && !fresh.rate_limit.limit_reached) {
+  const primaryExplicitlyAvailable =
+    fresh.rate_limit.allowed === true &&
+    fresh.rate_limit.limit_reached === false &&
+    fresh.rate_limit.remaining_percent != null &&
+    fresh.rate_limit.remaining_percent > 0;
+
+  if (
+    isFutureLock(existing?.rate_limit) &&
+    !fresh.rate_limit.limit_reached &&
+    !primaryExplicitlyAvailable
+  ) {
     merged.rate_limit = {
       ...fresh.rate_limit,
       allowed: false,

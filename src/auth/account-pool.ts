@@ -133,7 +133,7 @@ export class AccountPool {
     if (!entry) return null;
     this.refreshStatus(entry);
     if (entry.status !== "active") return null;
-    if (getConfig().quota.skip_exhausted && hasReachedCachedQuota(entry, options?.model)) return null;
+    if (this.isQuotaBlocked(options?.model)) return null;
 
     const now = Date.now();
     this.activeSlots = this.activeSlots.filter((startedAt) => now - startedAt <= ACQUIRE_LOCK_TTL_MS);
@@ -199,7 +199,7 @@ export class AccountPool {
     const entry = this.entry;
     if (!entry) return false;
     this.refreshStatus(entry);
-    return entry.status === "active" && (!getConfig().quota.skip_exhausted || !hasReachedCachedQuota(entry));
+    return entry.status === "active" && !this.isQuotaBlocked();
   }
 
   markStatus(entryId: string, status: AccountEntry["status"]): void {
@@ -313,7 +313,15 @@ export class AccountPool {
   }
 
   isAuthenticated(): boolean {
-    return this.hasAvailableAccount();
+    const entry = this.entry;
+    return Boolean(entry && !isTokenExpired(entry.token));
+  }
+
+  isQuotaBlocked(model?: string): boolean {
+    const entry = this.entry;
+    if (!entry || !getConfig().quota.skip_exhausted) return false;
+    this.refreshStatus(entry);
+    return entry.status === "active" && hasReachedCachedQuota(entry, model);
   }
 
   getUserInfo(): { email?: string; accountId?: string; planType?: string } | null {
