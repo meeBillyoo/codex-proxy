@@ -17,10 +17,34 @@ vi.mock("../../../src/fingerprint/manager.js", () => ({
   buildHeaders: () => ({ Authorization: "Bearer test-token" }),
 }));
 
-function setup(active = true) {
+function setup(options: {
+  active?: boolean;
+  quotaExhausted?: boolean;
+  acquired?: boolean;
+} = {}) {
+  const active = options.active ?? true;
+  const quotaExhausted = options.quotaExhausted ?? false;
   const pool = {
-    getAccount: () => active ? { status: "active", email: "test@example.com", planType: "team" } : null,
-    acquire: vi.fn(() => ({ token: "test-token", accountId: "account", entryId: "entry" })),
+    getAccount: () => active ? {
+      status: "active",
+      email: "test@example.com",
+      planType: "team",
+      quota: {
+        plan_type: "team",
+        rate_limit: {
+          allowed: !quotaExhausted,
+          limit_reached: quotaExhausted,
+          used_percent: quotaExhausted ? 100 : 10,
+          reset_at: quotaExhausted ? 1_800_000_000 : null,
+          limit_window_seconds: 18_000,
+        },
+        secondary_rate_limit: null,
+        code_review_rate_limit: null,
+      },
+    } : null,
+    acquire: vi.fn(() => options.acquired === false
+      ? null
+      : { token: "test-token", accountId: "account", entryId: "entry" }),
     releaseWithoutCounting: vi.fn(),
   };
   const app = createConnectionRoutes(pool as unknown as AccountPool);
@@ -93,10 +117,45 @@ describe("connection test usage endpoints", () => {
   });
 
   it("skips upstream requests when there are no active accounts", async () => {
-    const { pool, request } = setup(false);
+    const { pool, request } = setup({ active: false });
     const body = await (await request()).json();
     expect(body.overall).toBe("fail");
     expect(mocks.get).not.toHaveBeenCalled();
     expect(pool.acquire).not.toHaveBeenCalled();
+  });
+
+  it("reports quota exhaustion explicitly and skips the upstream request", async () => {
+    const { pool, request } = setup({ quotaExhausted: true });
+    const body = await (await request()).json();
+
+    expect(body.overall).toBe("fail");
+    expect(body.checks.find((check: { name: string }) => check.name === "account"))
+      .toMatchObject({
+        status: "fail",
+        error: "Codex CLI account quota is exhausted",
+        errorCode: "quota_exhausted",
+        resetAt: 1_800_000_000,
+      });
+    expect(body.checks.find((check: { name: string }) => check.name === "upstream"))
+      .toMatchObject({
+        status: "skip",
+        detail: "Skipped (Codex CLI account quota is exhausted)",
+      });
+    expect(pool.acquire).not.toHaveBeenCalled();
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("reports saturated concurrency as busy instead of an ambiguous acquisition failure", async () => {
+    const { request } = setup({ acquired: false });
+    const body = await (await request()).json();
+
+    expect(body.overall).toBe("fail");
+    expect(body.checks.find((check: { name: string }) => check.name === "upstream"))
+      .toMatchObject({
+        status: "fail",
+        error: "Codex CLI account is busy; all concurrency slots are in use",
+        errorCode: "account_busy",
+      });
+    expect(mocks.get).not.toHaveBeenCalled();
   });
 });

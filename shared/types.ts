@@ -80,6 +80,8 @@ export interface DiagnosticCheck {
   latencyMs: number;
   detail: string | null;
   error: string | null;
+  errorCode?: "quota_exhausted" | "account_busy";
+  resetAt?: number | null;
 }
 
 export interface TestConnectionResult {

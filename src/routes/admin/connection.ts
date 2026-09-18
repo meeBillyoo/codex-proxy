@@ -4,13 +4,22 @@ import { getConfig } from "../../config.js";
 import { getTransport, getTransportInfo } from "../../tls/transport.js";
 import { buildHeaders } from "../../fingerprint/manager.js";
 import { usageUrls } from "../../proxy/codex-usage.js";
+import { isQuotaExhausted } from "../../auth/quota-skip.js";
 
 export function createConnectionRoutes(accountPool: AccountPool): Hono {
   const app = new Hono();
 
   app.post("/admin/test-connection", async (c) => {
     type DiagStatus = "pass" | "fail" | "skip";
-    interface DiagCheck { name: string; status: DiagStatus; latencyMs: number; detail: string | null; error: string | null; }
+    interface DiagCheck {
+      name: string;
+      status: DiagStatus;
+      latencyMs: number;
+      detail: string | null;
+      error: string | null;
+      errorCode?: "quota_exhausted" | "account_busy";
+      resetAt?: number | null;
+    }
     const checks: DiagCheck[] = [];
     let overallFailed = false;
 
@@ -28,16 +37,42 @@ export function createConnectionRoutes(accountPool: AccountPool): Hono {
     const accountStart = Date.now();
     const account = accountPool.getAccount();
     const hasActive = account?.status === "active";
+    const quotaExhausted = hasActive && isQuotaExhausted(account.quota);
+    const exhaustedResetTimes = account?.quota
+      ? [
+          account.quota.rate_limit.limit_reached
+            ? account.quota.rate_limit.reset_at
+            : null,
+          account.quota.secondary_rate_limit?.limit_reached
+            ? account.quota.secondary_rate_limit.reset_at
+            : null,
+          account.quota.code_review_rate_limit?.limit_reached
+            ? account.quota.code_review_rate_limit.reset_at
+            : null,
+          ...Object.values(account.quota.rate_limits_by_limit_id ?? {})
+            .filter((limit) => limit.limit_reached)
+            .map((limit) => limit.reset_at),
+        ].filter((value): value is number => typeof value === "number")
+      : [];
+    const quotaResetAt = exhaustedResetTimes.length > 0
+      ? Math.max(...exhaustedResetTimes)
+      : null;
+    const accountUsable = hasActive && !quotaExhausted;
     checks.push({
       name: "account",
-      status: hasActive ? "pass" : "fail",
+      status: accountUsable ? "pass" : "fail",
       latencyMs: Date.now() - accountStart,
       detail: hasActive
         ? `${account.email ?? "Codex CLI account"} (${account.planType ?? "unknown plan"})`
         : account ? `Codex CLI account status: ${account.status}` : "Codex CLI auth file unavailable",
-      error: hasActive ? null : "Codex CLI account is unavailable",
+      error: quotaExhausted
+        ? "Codex CLI account quota is exhausted"
+        : hasActive ? null : "Codex CLI account is unavailable",
+      ...(quotaExhausted
+        ? { errorCode: "quota_exhausted" as const, resetAt: quotaResetAt }
+        : {}),
     });
-    if (!hasActive) overallFailed = true;
+    if (!accountUsable) overallFailed = true;
 
     // 3. Transport check
     const transportStart = Date.now();
@@ -55,12 +90,14 @@ export function createConnectionRoutes(accountPool: AccountPool): Hono {
     if (!transportOk) overallFailed = true;
 
     // 4. Upstream check
-    if (!hasActive) {
+    if (!accountUsable) {
       checks.push({
         name: "upstream",
         status: "skip",
         latencyMs: 0,
-        detail: "Skipped (Codex CLI account unavailable)",
+        detail: quotaExhausted
+          ? "Skipped (Codex CLI account quota is exhausted)"
+          : "Skipped (Codex CLI account unavailable)",
         error: null,
       });
     } else {
@@ -72,7 +109,8 @@ export function createConnectionRoutes(accountPool: AccountPool): Hono {
           status: "fail",
           latencyMs: Date.now() - upstreamStart,
           detail: null,
-          error: "Could not acquire Codex CLI account for test",
+          error: "Codex CLI account is busy; all concurrency slots are in use",
+          errorCode: "account_busy",
         });
         overallFailed = true;
       } else {

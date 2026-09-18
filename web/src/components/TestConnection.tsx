@@ -54,6 +54,11 @@ function CheckRow({ check }: { check: DiagnosticCheck }) {
   const t = useT();
   const nameKey = CHECK_NAME_KEYS[check.name] ?? check.name;
   const statusKey = STATUS_KEYS[check.status];
+  const error = check.errorCode === "quota_exhausted"
+    ? `${t("connectionQuotaExhausted")}${check.resetAt ? ` ${t("resetsAt")}: ${new Date(check.resetAt * 1000).toLocaleString()}` : ""}`
+    : check.errorCode === "account_busy"
+      ? t("connectionAccountBusy")
+      : check.error;
 
   return (
     <div class={`flex items-start gap-3 p-3 rounded-lg border ${STATUS_BG[check.status]}`}>
@@ -73,8 +78,8 @@ function CheckRow({ check }: { check: DiagnosticCheck }) {
         {check.detail && (
           <p class="text-xs text-slate-500 dark:text-text-dim mt-0.5 break-all">{check.detail}</p>
         )}
-        {check.error && (
-          <p class="text-xs text-red-500 dark:text-red-400 mt-0.5 break-all">{check.error}</p>
+        {error && (
+          <p class="text-xs text-red-500 dark:text-red-400 mt-0.5 break-all">{error}</p>
         )}
       </div>
     </div>
