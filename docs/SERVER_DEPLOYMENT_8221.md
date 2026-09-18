@@ -50,6 +50,9 @@ PM2_APP_NAME=codex-proxy
 - 每个 release 的 `data` 必须链接到 `shared/data`。
 - `shared/codex-proxy.env` 必须保持 `600` 权限。
 - 切换和回滚不得覆盖或删除 `shared`。
+- 发布验收完成后应移除 release 的 `.git` 元数据，并在 `.deploy-commit` 中保留提交
+  SHA；这样应用进入 `manual` 部署模式，不会在不可变 release 中自行执行旧的
+  `origin/master` 自更新逻辑。
 - 不在 release 中直接开发或手工修改源码；修复应提交到仓库，再部署新 release。
 
 ## 运行时准备
@@ -217,6 +220,16 @@ NODE
 git -C "$RELEASE_DIR" status --short --branch
 readlink "$RELEASE_DIR/data"
 ```
+
+记录已验证的提交并移除 Git 元数据，使运行中的 release 不可被应用自身改写：
+
+```bash
+git -C "$RELEASE_DIR" rev-parse HEAD > "$RELEASE_DIR/.deploy-commit"
+rm -rf "$RELEASE_DIR/.git"
+```
+
+后续验收使用 `cat "$RELEASE_DIR/.deploy-commit"` 检查提交；不要再对运行中的
+release 执行 `git pull`。
 
 ### 5. 原子切换 current
 
