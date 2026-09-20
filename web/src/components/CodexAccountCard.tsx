@@ -67,8 +67,8 @@ export function CodexAccountCard(p: CodexAccountCardProps) {
           role="progressbar"
           aria-label={label}
           aria-valuenow={left ?? 0}
-          aria-valuemin="0"
-          aria-valuemax="100"
+          aria-valuemin={0}
+          aria-valuemax={100}
         >
           <div
             class={`h-full rounded-full ${left != null && left < 20 ? "bg-red-500" : left != null && left < 50 ? "bg-amber-500" : "bg-emerald-500"}`}
@@ -176,9 +176,9 @@ export function CodexAccountCard(p: CodexAccountCardProps) {
             <h3 class="text-sm font-bold text-slate-800 dark:text-text-main">
               {t("codexAccountQuota")}
             </h3>
-            <div class="mt-3 grid gap-3 sm:grid-cols-2">
-              {bar(t("fiveHourLimit"), quotaWindows.fiveHour)}
-              {bar(t("weeklyLimit"), quotaWindows.weekly)}
+            <div class={`mt-3 grid gap-3 ${quotaWindows.fiveHour && quotaWindows.weekly ? "sm:grid-cols-2" : "sm:grid-cols-1"}`}>
+              {quotaWindows.fiveHour && bar(t("fiveHourLimit"), quotaWindows.fiveHour)}
+              {quotaWindows.weekly && bar(t("weeklyLimit"), quotaWindows.weekly)}
             </div>
             <div class="mt-3 grid gap-3 sm:grid-cols-3">
               {cells([

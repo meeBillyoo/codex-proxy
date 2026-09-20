@@ -9,10 +9,15 @@ PM2、不可变 release 目录、`current` 软链接以及共享运行数据目�
 
 ## 服务器登记表
 
-| 名称 | SSH | 应用根目录 | 状态 |
-| --- | --- | --- | --- |
-| `GCUbuntuDemo` | `ssh clawbot@35.201.250.172 -i /Users/token/Work/sshfile/id_rsa_omnisciate` | `/home/clawbot/apps/codex-proxy` | 已按本标准部署 |
-| 原 `34.28.243.240` 环境 | `ssh collaborators@34.28.243.240` | `/home/collaborators/services/codex-proxy` | 历史固定目录部署，更新前应迁移到本标准 |
+| 名称 | 公网地址 | SSH | 应用根目录 | 状态 |
+| --- | --- | --- | --- | --- |
+| `GCCollaborators` | `34.28.243.240` | `gcloud compute ssh collaborators@other-collaborators --project=online-stars --zone=us-central1-a --tunnel-through-iap --ssh-key-file=/Users/token/Work/sshfile/id_rsa_collaborators` | `/home/collaborators/services/codex-proxy` | 当前生产环境，Plus 账号 |
+| `AIAPI` | `34.133.17.22` | `ssh -p 54322 aiagent@34.133.17.22 -i /Users/token/Work/sshfile/id_rsa_aiagent` | `/home/aiagent/apps/codex-proxy` | 当前生产环境，Pro 账号 |
+| `GCMakePopular` | `34.70.149.162` | `ssh -p 54322 makepopular@34.70.149.162 -i /Users/token/Work/sshfile/id_rsa_makepopular` | `/home/makepopular/apps/codex-proxy` | 当前生产环境，Pro 账号 |
+
+2026-09-20 核验到的当前 8221 生产节点就是上面三台。原 `GCUbuntuDemo`（旧公网地址
+`35.201.250.172`，现对应实例地址 `104.155.193.240`）当前没有运行 codex-proxy 的
+`8221` 监听，不计入当前三台生产节点；保留该信息仅用于历史追溯。
 
 新增服务器时先在本表登记名称、SSH 连接方式和应用根目录。不要在文档中记录私钥内容、
 `PROXY_API_KEY`、Codex 登录 token 或其他凭据。

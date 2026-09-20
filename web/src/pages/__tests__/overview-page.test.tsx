@@ -31,9 +31,9 @@ const account: Account = {
   addedAt: "2026-09-01T00:00:00.000Z",
   expiresAt: "2027-01-01T00:00:00.000Z",
   status: "active",
-  planType: "pro",
+  planType: "plus",
   quota: {
-    plan_type: "pro",
+    plan_type: "plus",
     rate_limit: { used_percent: 27, reset_at: 1_800_000_000, limit_window_seconds: 5 * 60 * 60 },
     secondary_rate_limit: { remaining_percent: 41, reset_at: 1_800_100_000, limit_window_seconds: 7 * 24 * 60 * 60 },
     reset_credits_available: 2,
@@ -154,5 +154,40 @@ describe("OverviewPage", () => {
 
     expect(quotaRemaining(windows.fiveHour)).toBeNull();
     expect(quotaRemaining(windows.weekly)).toBe(64);
+  });
+
+  it("does not render a 5-hour meter when a Pro account only reports a weekly window", () => {
+    render(
+      <OverviewPage
+        account={{
+          ...account,
+          planType: "pro",
+          quota: {
+            plan_type: "pro",
+            rate_limit: {
+              used_percent: 12,
+              remaining_percent: 88,
+              reset_at: 1_800_000_000,
+              limit_window_seconds: 7 * 24 * 60 * 60,
+            },
+            secondary_rate_limit: null,
+            reset_credits_available: null,
+          },
+        }}
+        authFile="/home/codex/.codex/auth.json"
+        loading={false}
+        refreshing={false}
+        error={null}
+        lastUpdated={null}
+        onReload={vi.fn().mockResolvedValue(true)}
+        onRefreshHealth={vi.fn().mockResolvedValue(undefined)}
+        runtime={runtime}
+        codexCliVersion="codex-cli 1.2.3"
+      />,
+    );
+
+    expect(screen.queryByText("fiveHourLimit")).toBeNull();
+    expect(screen.getByText("weeklyLimit")).toBeTruthy();
+    expect(screen.getByText("88%")).toBeTruthy();
   });
 });

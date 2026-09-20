@@ -153,7 +153,7 @@ function QuotaMeter({ label, window }: { label: string; window?: AccountQuotaWin
         <span class="text-xs font-semibold text-slate-600 dark:text-text-dim">{label}</span>
         <span class="text-xl font-bold tabular-nums text-slate-900 dark:text-text-main">{remaining == null ? "—" : `${Math.round(remaining)}%`}</span>
       </div>
-      <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-bg-dark" role="progressbar" aria-label={label} aria-valuenow={remaining ?? 0} aria-valuemin="0" aria-valuemax="100">
+      <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-bg-dark" role="progressbar" aria-label={label} aria-valuenow={remaining ?? 0} aria-valuemin={0} aria-valuemax={100}>
         <div class={`h-full rounded-full transition-[width] ${toneForPercentage(remaining, true)}`} style={{ width: `${remaining ?? 0}%` }} />
       </div>
       <p class="mt-2 truncate text-[11px] text-slate-400 dark:text-text-dim">
@@ -171,7 +171,7 @@ function ResourceMeter({ label, value, detail }: { label: string; value: number 
         <span class="text-xs font-semibold text-slate-600 dark:text-text-dim">{label}</span>
         <span class="text-base font-bold tabular-nums text-slate-900 dark:text-text-main">{normalized == null ? "—" : `${normalized.toFixed(1)}%`}</span>
       </div>
-      <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-bg-dark" role="progressbar" aria-label={label} aria-valuenow={normalized ?? 0} aria-valuemin="0" aria-valuemax="100">
+      <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-bg-dark" role="progressbar" aria-label={label} aria-valuenow={normalized ?? 0} aria-valuemin={0} aria-valuemax={100}>
         <div class={`h-full rounded-full transition-[width] ${toneForPercentage(normalized, false)}`} style={{ width: `${normalized ?? 0}%` }} />
       </div>
       <p class="mt-2 text-[11px] text-slate-400 dark:text-text-dim">{detail}</p>
@@ -206,6 +206,12 @@ function statusLabel(status: string, t: ReturnType<typeof useT>): string {
 export function OverviewPage(props: OverviewPageProps) {
   const t = useT();
   const quotaWindows = resolveQuotaWindows(props.account?.quota);
+  let quotaGridClass = "grid gap-3 sm:grid-cols-1";
+  if (quotaWindows.fiveHour && quotaWindows.weekly) {
+    quotaGridClass = "grid gap-3 sm:grid-cols-3";
+  } else if (quotaWindows.fiveHour || quotaWindows.weekly) {
+    quotaGridClass = "grid gap-3 sm:grid-cols-2";
+  }
   const usage = useUsageSummary();
   const resetCredits = useResetCredits();
   const [refreshingAll, setRefreshingAll] = useState(false);
@@ -281,9 +287,9 @@ export function OverviewPage(props: OverviewPageProps) {
         </Card>
 
         <Card title={t("quotaOverview")} description={t("quotaDescription")} icon="quota" class="xl:col-span-7">
-          <div class="grid gap-3 sm:grid-cols-3">
-            <QuotaMeter label={t("fiveHourLimit")} window={quotaWindows.fiveHour} />
-            <QuotaMeter label={t("weeklyLimit")} window={quotaWindows.weekly} />
+          <div class={quotaGridClass}>
+            {quotaWindows.fiveHour && <QuotaMeter label={t("fiveHourLimit")} window={quotaWindows.fiveHour} />}
+            {quotaWindows.weekly && <QuotaMeter label={t("weeklyLimit")} window={quotaWindows.weekly} />}
             <div class="rounded-xl border border-slate-200/80 p-4 dark:border-border-dark">
               <span class="text-xs font-semibold text-slate-600 dark:text-text-dim">{t("resetCredits")}</span>
               <div class="mt-1.5 text-xl font-bold tabular-nums text-slate-900 dark:text-text-main">{availableResetCredits == null ? "—" : availableResetCredits}</div>
