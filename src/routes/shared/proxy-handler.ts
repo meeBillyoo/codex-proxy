@@ -85,10 +85,21 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
 
   const acquired = acquireAccount(accountPool, req.codexRequest.model, fmt.tag);
   if (!acquired) {
+    const availability = typeof accountPool.getAvailability === "function"
+      ? accountPool.getAvailability(req.codexRequest.model)
+      : { reason: "unknown" as const, status: undefined, usedSlots: undefined, maxConcurrent: undefined };
+    console.warn(
+      `[${fmt.tag}] No CLI account available` +
+        ` reason=${availability.reason ?? "unknown"}` +
+        (availability.status ? ` status=${availability.status}` : "") +
+        (availability.usedSlots != null && availability.maxConcurrent != null
+          ? ` slots=${availability.usedSlots}/${availability.maxConcurrent}`
+          : ""),
+    );
     if (accountPool.isQuotaBlocked(req.codexRequest.model)) {
       return respondWithQuotaExhausted({ c, req, fmt });
     }
-    return respondWithNoAccount({ c, req, fmt });
+    return respondWithNoAccount({ c, req, fmt, accountPool });
   }
 
   const entry = accountPool.getEntry(acquired.entryId);
@@ -105,7 +116,7 @@ export async function handleProxyRequest(options: HandleProxyRequestOptions): Pr
       accountPool.updateCachedQuota(acquired.entryId, quota);
       if (quota.rate_limit.limit_reached) {
         releaseAccount(accountPool, acquired.entryId, undefined, released);
-        return respondWithNoAccount({ c, req, fmt });
+        return respondWithNoAccount({ c, req, fmt, accountPool });
       }
     } catch (err) {
       console.warn(`[${fmt.tag}] Failed to verify current CLI account quota:`, err);

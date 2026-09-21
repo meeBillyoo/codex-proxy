@@ -62,10 +62,10 @@ function parseModelAction(param: string): {
 const GEMINI_FORMAT: FormatAdapter = {
   tag: "Gemini",
   noAccountStatus: 503,
-  formatNoAccount: () =>
+  formatNoAccount: (message = "The Codex CLI account is unavailable, expired, or rate-limited.") =>
     makeError(
       503,
-      "The Codex CLI account is unavailable, expired, or rate-limited.",
+      message,
       "UNAVAILABLE",
     ),
   format429: (msg) => makeError(429, msg, "RESOURCE_EXHAUSTED"),

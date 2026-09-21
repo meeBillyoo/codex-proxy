@@ -161,4 +161,48 @@ describe("/v1/responses stream error formatting", () => {
     });
     expect(accountPool.release).toHaveBeenCalledWith("entry_1", undefined);
   });
+
+  it("exposes account_busy when all per-account concurrency slots are occupied", async () => {
+    const accountPool = {
+      ...createMockAccountPool(),
+      acquire: vi.fn(() => null),
+      isQuotaBlocked: vi.fn(() => false),
+      getAvailability: vi.fn(() => ({
+        available: false,
+        reason: "busy" as const,
+        maxConcurrent: 10,
+        usedSlots: 10,
+      })),
+    };
+    const routes = createResponsesRoutes(accountPool as never);
+    const app = new Hono();
+    app.use("*", async (c, next) => {
+      c.set("authRole", "master");
+      await next();
+    });
+    app.route("/", routes);
+
+    const res = await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "codex",
+        input: [{ role: "user", content: "Hello" }],
+        stream: true,
+      }),
+    });
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("x-codex-proxy-error-code")).toBe("account_busy");
+    const event = parseFirstSSEEvent(await res.text());
+    expect(event.event).toBe("response.failed");
+    expect(event.data).toMatchObject({
+      type: "response.failed",
+      error: {
+        type: "server_error",
+        code: "account_busy",
+        message: expect.stringContaining("10/10 concurrency slots in use"),
+      },
+    });
+  });
 });

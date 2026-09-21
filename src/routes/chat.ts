@@ -34,10 +34,9 @@ function makeOpenAIFormat(
   return {
     tag: "Chat",
     noAccountStatus: 503,
-    formatNoAccount: () => ({
+    formatNoAccount: (message = "The Codex CLI account is unavailable, expired, or rate-limited.") => ({
       error: {
-        message:
-          "The Codex CLI account is unavailable, expired, or rate-limited.",
+        message,
         type: "server_error",
         param: null,
         code: "no_available_accounts",

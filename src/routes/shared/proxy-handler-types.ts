@@ -88,7 +88,7 @@ export interface FormatCollectTranslatorResult {
 export interface FormatAdapter {
   tag: string;
   noAccountStatus: StatusCode;
-  formatNoAccount: () => unknown;
+  formatNoAccount: (message?: string) => unknown;
   format429: (message: string) => unknown;
   formatQuotaExhausted: (message: string) => unknown;
   formatError: (status: number, message: string) => unknown;

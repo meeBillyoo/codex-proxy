@@ -82,6 +82,29 @@ describe("proxy error response helpers", () => {
     expect(fmt.formatNoAccount).toHaveBeenCalledOnce();
   });
 
+  it("surfaces the account availability reason for streaming requests", async () => {
+    const app = new Hono();
+    const fmt = createMockFormatAdapter();
+    const req = createRequest(true);
+    const accountPool = {
+      getAvailability: () => ({
+        available: false,
+        reason: "busy" as const,
+        maxConcurrent: 3,
+        usedSlots: 3,
+      }),
+    } as never;
+
+    app.get("/busy", (c) => respondWithNoAccount({ c, req, fmt, accountPool }));
+
+    const res = await app.request("/busy");
+    const text = await res.text();
+
+    expect(res.status).toBe(503);
+    expect(text).toContain("busy (3/3 concurrency slots in use)");
+    expect(text).not.toContain("expired, or rate-limited");
+  });
+
   it("formats non-streaming 500 proxy errors with the route formatter", async () => {
     const app = new Hono();
     const fmt = createMockFormatAdapter();

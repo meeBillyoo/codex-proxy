@@ -98,10 +98,10 @@ function makeAnthropicFormat(wantThinking: boolean): FormatAdapter {
   return {
     tag: "Messages",
     noAccountStatus: 529 as StatusCode,
-    formatNoAccount: () =>
+    formatNoAccount: (message = "The Codex CLI account is unavailable, expired, or rate-limited.") =>
       makeError(
         "overloaded_error",
-        "The Codex CLI account is unavailable, expired, or rate-limited.",
+        message,
       ),
     format429: (msg) => makeError("rate_limit_error", msg),
     formatQuotaExhausted: (msg) => makeError("rate_limit_error", msg),

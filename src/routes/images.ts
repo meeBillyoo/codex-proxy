@@ -52,7 +52,7 @@ function formatImagesError(status: number, message: string): unknown {
 const IMAGES_FORMAT: FormatAdapter = {
   tag: "Images",
   noAccountStatus: 503,
-  formatNoAccount: () => formatImagesError(503, "The Codex CLI account is unavailable, expired, or rate-limited."),
+  formatNoAccount: (message = "The Codex CLI account is unavailable, expired, or rate-limited.") => formatImagesError(503, message),
   format429: (message) => formatImagesError(429, message),
   formatQuotaExhausted: (message) => ({
     error: {

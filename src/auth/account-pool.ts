@@ -39,6 +39,24 @@ export interface AccountCapacitySummary {
   available_slots: number;
 }
 
+export type AccountUnavailableReason =
+  | "auth_file_unavailable"
+  | "expired"
+  | "quota_exhausted"
+  | "refreshing"
+  | "disabled"
+  | "banned"
+  | "busy"
+  | "unknown";
+
+export interface AccountAvailability {
+  available: boolean;
+  reason?: AccountUnavailableReason;
+  status?: AccountEntry["status"];
+  maxConcurrent?: number;
+  usedSlots?: number;
+}
+
 function emptyUsage(): AccountUsage {
   return {
     request_count: 0,
@@ -200,6 +218,44 @@ export class AccountPool {
     if (!entry) return false;
     this.refreshStatus(entry);
     return entry.status === "active" && !this.isQuotaBlocked();
+  }
+
+  /**
+   * Explain why acquire() cannot return the CLI account. This is deliberately
+   * read-only from the caller's perspective and contains no credential data,
+   * so it can safely be used in client-facing error responses and diagnostics.
+   */
+  getAvailability(model?: string): AccountAvailability {
+    const entry = this.entry;
+    if (!entry) return { available: false, reason: "auth_file_unavailable" };
+
+    this.refreshStatus(entry);
+    if (entry.status !== "active") {
+      const reason: AccountUnavailableReason =
+        entry.status === "expired" ? "expired" :
+          entry.status === "quota_exhausted" ? "quota_exhausted" :
+            entry.status === "refreshing" ? "refreshing" :
+              entry.status === "disabled" ? "disabled" :
+                entry.status === "banned" ? "banned" : "unknown";
+      return { available: false, reason, status: entry.status };
+    }
+    if (this.isQuotaBlocked(model)) {
+      return { available: false, reason: "quota_exhausted", status: entry.status };
+    }
+
+    const now = Date.now();
+    this.activeSlots = this.activeSlots.filter((startedAt) => now - startedAt <= ACQUIRE_LOCK_TTL_MS);
+    const maxConcurrent = getConfig().auth.max_concurrent_per_account ?? 3;
+    if (this.activeSlots.length >= maxConcurrent) {
+      return {
+        available: false,
+        reason: "busy",
+        status: entry.status,
+        maxConcurrent,
+        usedSlots: this.activeSlots.length,
+      };
+    }
+    return { available: true, status: entry.status, maxConcurrent, usedSlots: this.activeSlots.length };
   }
 
   markStatus(entryId: string, status: AccountEntry["status"]): void {

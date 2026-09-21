@@ -96,6 +96,13 @@ function stripCodexErrorPrefix(message: string): string {
 
 function classifyResponsesStreamError(status: number, message: string): ResponsesStreamError {
   const cleanMessage = stripCodexErrorPrefix(message);
+  if (cleanMessage.toLowerCase().startsWith("the codex cli account is busy")) {
+    return {
+      type: "server_error",
+      code: "account_busy",
+      message: cleanMessage,
+    };
+  }
   if (status === 429) {
     return {
       type: "rate_limit_error",
@@ -499,12 +506,12 @@ export async function collectPassthrough(
 export const PASSTHROUGH_FORMAT: FormatAdapter = {
   tag: "Responses",
   noAccountStatus: 503,
-  formatNoAccount: () => ({
+  formatNoAccount: (message = "The Codex CLI account is unavailable, expired, or rate-limited.") => ({
     type: "error",
     error: {
       type: "server_error",
       code: "no_available_accounts",
-      message: "The Codex CLI account is unavailable, expired, or rate-limited.",
+      message,
     },
   }),
   format429: (msg) => ({
