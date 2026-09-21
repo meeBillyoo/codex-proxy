@@ -161,6 +161,12 @@ describe("OverviewPage", () => {
     expect(screen.getByText("overviewUsageTitle")).toBeTruthy();
     expect(screen.getByText("hostPerformance")).toBeTruthy();
     expect(screen.getByText("overviewAttentionTitle")).toBeTruthy();
+    expect(
+      screen
+        .getByText("overviewAttentionTitle")
+        .closest("section")
+        ?.className,
+    ).toContain("xl:col-span-5");
     expect(screen.getAllByText("owner@example.com").length).toBeGreaterThan(0);
     expect(screen.getByText(/codex-cli 1\.2\.3/)).toBeTruthy();
     expect(screen.getAllByText("73%").length).toBeGreaterThan(0);

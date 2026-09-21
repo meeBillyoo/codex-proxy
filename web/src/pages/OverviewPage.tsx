@@ -466,7 +466,7 @@ function AttentionPanel({
     <Panel
       title={t("overviewAttentionTitle")}
       description={t("overviewAttentionDescription")}
-      class="h-full"
+      class="h-full xl:col-span-5"
     >
       {items.length === 0 ? (
         <div class="flex min-h-[164px] flex-col items-center justify-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50/60 p-5 text-center dark:border-emerald-900/70 dark:bg-emerald-950/20">
