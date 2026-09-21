@@ -6,12 +6,14 @@ import type { ServerRuntime } from "../../../../shared/hooks/use-status";
 
 const hookMocks = vi.hoisted(() => ({
   useUsageSummary: vi.fn(),
+  useUsageHistory: vi.fn(),
   useResetCredits: vi.fn(),
   useT: vi.fn(),
 }));
 
 vi.mock("../../../../shared/hooks/use-usage-stats", () => ({
   useUsageSummary: hookMocks.useUsageSummary,
+  useUsageHistory: hookMocks.useUsageHistory,
 }));
 
 vi.mock("../../../../shared/hooks/use-reset-credits", () => ({
@@ -22,7 +24,11 @@ vi.mock("../../../../shared/i18n/context", () => ({
   useT: hookMocks.useT,
 }));
 
-import { OverviewPage, quotaRemaining, resolveQuotaWindows } from "../OverviewPage";
+import {
+  OverviewPage,
+  quotaRemaining,
+  resolveQuotaWindows,
+} from "../OverviewPage";
 
 const account: Account = {
   id: "codex-cli",
@@ -34,8 +40,16 @@ const account: Account = {
   planType: "plus",
   quota: {
     plan_type: "plus",
-    rate_limit: { used_percent: 27, reset_at: 1_800_000_000, limit_window_seconds: 5 * 60 * 60 },
-    secondary_rate_limit: { remaining_percent: 41, reset_at: 1_800_100_000, limit_window_seconds: 7 * 24 * 60 * 60 },
+    rate_limit: {
+      used_percent: 27,
+      reset_at: 1_800_000_000,
+      limit_window_seconds: 5 * 60 * 60,
+    },
+    secondary_rate_limit: {
+      remaining_percent: 41,
+      reset_at: 1_800_100_000,
+      limit_window_seconds: 7 * 24 * 60 * 60,
+    },
     reset_credits_available: 2,
   },
 };
@@ -63,13 +77,15 @@ const runtime: ServerRuntime = {
 
 describe("OverviewPage", () => {
   beforeEach(() => {
-    hookMocks.useT.mockReturnValue((key: string, vars?: Record<string, string | number>) => {
-      let value = key;
-      for (const [name, replacement] of Object.entries(vars ?? {})) {
-        value = value.replace(`{${name}}`, String(replacement));
-      }
-      return value;
-    });
+    hookMocks.useT.mockReturnValue(
+      (key: string, vars?: Record<string, string | number>) => {
+        let value = key;
+        for (const [name, replacement] of Object.entries(vars ?? {})) {
+          value = value.replace(`{${name}}`, String(replacement));
+        }
+        return value;
+      },
+    );
     hookMocks.useUsageSummary.mockReturnValue({
       summary: {
         total_input_tokens: 1_000,
@@ -88,6 +104,34 @@ describe("OverviewPage", () => {
       loading: false,
       reload: vi.fn().mockResolvedValue(undefined),
     });
+    hookMocks.useUsageHistory.mockReturnValue({
+      dataPoints: [
+        {
+          timestamp: "2026-09-18T07:00:00.000Z",
+          input_tokens: 100,
+          output_tokens: 50,
+          cached_tokens: 0,
+          image_input_tokens: 0,
+          image_output_tokens: 0,
+          image_request_count: 0,
+          image_request_failed_count: 0,
+          request_count: 12,
+        },
+        {
+          timestamp: "2026-09-18T08:00:00.000Z",
+          input_tokens: 120,
+          output_tokens: 60,
+          cached_tokens: 0,
+          image_input_tokens: 0,
+          image_output_tokens: 0,
+          image_request_count: 0,
+          image_request_failed_count: 0,
+          request_count: 18,
+        },
+      ],
+      loading: false,
+      reload: vi.fn().mockResolvedValue(undefined),
+    });
     hookMocks.useResetCredits.mockReturnValue({
       snapshot: { available_count: 3, next_expires_at: 1_800_200_000 },
       loading: false,
@@ -97,7 +141,7 @@ describe("OverviewPage", () => {
 
   afterEach(cleanup);
 
-  it("presents account, quota, local usage, and host performance as separate sections", () => {
+  it("presents the status-first dashboard hierarchy and preserves existing metrics", () => {
     render(
       <OverviewPage
         account={account}
@@ -113,12 +157,13 @@ describe("OverviewPage", () => {
       />,
     );
 
-    expect(screen.getByText("accountInformation")).toBeTruthy();
-    expect(screen.getByText("quotaOverview")).toBeTruthy();
+    expect(screen.getByText("overviewAccountQuotaTitle")).toBeTruthy();
+    expect(screen.getByText("overviewUsageTitle")).toBeTruthy();
     expect(screen.getByText("hostPerformance")).toBeTruthy();
+    expect(screen.getByText("overviewAttentionTitle")).toBeTruthy();
     expect(screen.getAllByText("owner@example.com").length).toBeGreaterThan(0);
-    expect(screen.getByText("codex-cli 1.2.3")).toBeTruthy();
-    expect(screen.getByText("73%")).toBeTruthy();
+    expect(screen.getByText(/codex-cli 1\.2\.3/)).toBeTruthy();
+    expect(screen.getAllByText("73%").length).toBeGreaterThan(0);
     expect(screen.getByText("41%")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
     expect(screen.getByText("1,550")).toBeTruthy();
@@ -156,7 +201,7 @@ describe("OverviewPage", () => {
     expect(quotaRemaining(windows.weekly)).toBe(64);
   });
 
-  it("does not render a 5-hour meter when a Pro account only reports a weekly window", () => {
+  it("does not render a 5-hour KPI when a Pro account only reports a weekly window", () => {
     render(
       <OverviewPage
         account={{
@@ -187,7 +232,42 @@ describe("OverviewPage", () => {
     );
 
     expect(screen.queryByText("fiveHourLimit")).toBeNull();
-    expect(screen.getByText("weeklyLimit")).toBeTruthy();
-    expect(screen.getByText("88%")).toBeTruthy();
+    expect(screen.getAllByText("weeklyLimit").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("88%").length).toBeGreaterThan(0);
+  });
+
+  it("surfaces quota, credential, and host warnings in the attention panel", () => {
+    hookMocks.useUsageHistory.mockReturnValue({
+      dataPoints: [],
+      loading: false,
+      reload: vi.fn().mockResolvedValue(undefined),
+    });
+    render(
+      <OverviewPage
+        account={{
+          ...account,
+          expiresAt: new Date(Date.now() + 5 * 86_400_000).toISOString(),
+        }}
+        authFile="/home/codex/.codex/auth.json"
+        loading={false}
+        refreshing={false}
+        error={null}
+        lastUpdated={null}
+        onReload={vi.fn().mockResolvedValue(true)}
+        onRefreshHealth={vi.fn().mockResolvedValue(undefined)}
+        runtime={{
+          ...runtime,
+          cpu_usage_percent: 92,
+          memory_usage_percent: 90,
+          disk_usage_percent: 91,
+        }}
+        codexCliVersion="codex-cli 1.2.3"
+      />,
+    );
+
+    expect(screen.getByText("overviewWeeklyAttention")).toBeTruthy();
+    expect(screen.getByText("overviewCredentialAttention")).toBeTruthy();
+    expect(screen.getByText("overviewHostAttention")).toBeTruthy();
+    expect(screen.getByText("overviewUsageEmpty")).toBeTruthy();
   });
 });
