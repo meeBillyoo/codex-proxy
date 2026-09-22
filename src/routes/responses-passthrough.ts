@@ -48,6 +48,43 @@ export function syncOutputTextFromOutput(response: Record<string, unknown>): voi
   if (texts.length > 0) response.output_text = texts.join("\n\n");
 }
 
+/**
+ * The Codex backend may emit a complete output item (including the base64
+ * image result) in response.output_item.done and then finish with
+ * response.completed.response.output omitted or empty. Some clients render
+ * only the completed response object, so keep the streamed response usable by
+ * reconstructing that field from the items already seen on the stream.
+ */
+function backfillStreamedCompletedOutput(
+  data: unknown,
+  outputItems: readonly unknown[],
+  textDeltas: string,
+): unknown {
+  if (!isRecord(data) || !isRecord(data.response)) return data;
+  const response = data.response;
+  if (Array.isArray(response.output) && response.output.length > 0) return data;
+
+  const output = outputItems.length > 0
+    ? [...outputItems]
+    : textDeltas
+      ? [{
+          type: "message",
+          role: "assistant",
+          status: "completed",
+          content: [{ type: "output_text", text: textDeltas }],
+        }]
+      : null;
+  if (!output) return data;
+
+  return {
+    ...data,
+    response: {
+      ...response,
+      output,
+    },
+  };
+}
+
 // ── Stream error builders ─────────────────────────────────────────
 
 const STREAM_DISCONNECTED_CODE = "stream_disconnected";
@@ -188,6 +225,8 @@ export async function* streamPassthrough(
   let responseId: string | null = null;
   const streamFunctionCallIds = new Set<string>();
   const streamReplayItems: ReasoningReplayItem[] = [];
+  const streamOutputItems: unknown[] = [];
+  let streamTextDeltas = "";
 
   const stream = api.parseStream(response);
   let upstreamDone = false;
@@ -227,6 +266,12 @@ export async function* streamPassthrough(
 
       const raw = next.value;
       responseId = extractResponseIdFromEventData(raw.data) ?? responseId;
+      if (raw.event === "response.output_text.delta" && isRecord(raw.data) && typeof raw.data.delta === "string") {
+        streamTextDeltas += raw.data.delta;
+      }
+      const eventData = raw.event === "response.completed"
+        ? backfillStreamedCompletedOutput(raw.data, streamOutputItems, streamTextDeltas)
+        : raw.data;
       if (isTerminalResponsesEvent(raw.event)) sawTerminal = true;
       if (raw.event === "error" || raw.event === "response.failed") {
         // Terminal failure frames used to pass through with zero trace: no log
@@ -258,7 +303,7 @@ export async function* streamPassthrough(
       }
 
       if (tupleTextBuffer !== null && raw.event === "response.output_text.delta") {
-        const data = raw.data;
+        const data = eventData;
         if (isRecord(data) && typeof data.delta === "string") {
           tupleTextBuffer += data.delta;
           continue;
@@ -276,7 +321,7 @@ export async function* streamPassthrough(
           }
           yield `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: reconvertedText })}\n\n`;
         }
-        const data = raw.data;
+        const data = eventData;
         if (isRecord(data) && isRecord(data.response) && tupleTextBuffer) {
           const resp = data.response;
           if (Array.isArray(resp.output)) {
@@ -300,10 +345,10 @@ export async function* streamPassthrough(
         }
       }
 
-      yield `event: ${raw.event}\ndata: ${JSON.stringify(raw.data)}\n\n`;
+      yield `event: ${raw.event}\ndata: ${JSON.stringify(eventData)}\n\n`;
 
       if (raw.event === "response.output_item.done") {
-        const data = raw.data;
+        const data = eventData;
         if (
           isRecord(data) && isRecord(data.item) &&
           (data.item.type === "function_call" || data.item.type === "custom_tool_call")
@@ -312,6 +357,7 @@ export async function* streamPassthrough(
           if (typeof callId === "string" && callId) streamFunctionCallIds.add(callId);
         }
         if (isRecord(data) && isRecord(data.item)) {
+          streamOutputItems.push(data.item);
           appendReplayArtifacts(streamReplayItems, [data.item]);
         }
       }
@@ -321,7 +367,7 @@ export async function* streamPassthrough(
         raw.event === "response.in_progress" ||
         raw.event === "response.completed"
       ) {
-        const data = raw.data;
+        const data = eventData;
         if (isRecord(data) && isRecord(data.response)) {
           const resp = data.response;
           if (typeof resp.id === "string") onResponseId(resp.id);

@@ -188,6 +188,44 @@ describe("streamPassthrough premature close handling", () => {
     expect(evt.accountEntryId).toBeUndefined();
   });
 
+  it("backfills streamed image output into response.completed", async () => {
+    const events = await collectStreamEvents([
+      { event: "response.created", data: { response: { id: "resp_stream_image" } } },
+      {
+        event: "response.output_item.done",
+        data: {
+          output_index: 0,
+          item: {
+            id: "img_call_1",
+            type: "image_generation_call",
+            status: "completed",
+            result: "ZmFrZS1pbWFnZQ==",
+          },
+        },
+      },
+      {
+        event: "response.completed",
+        data: {
+          response: {
+            id: "resp_stream_image",
+            output: [],
+            usage: { input_tokens: 10, output_tokens: 20 },
+          },
+        },
+      },
+    ]);
+
+    const completed = events.find((event) => event.event === "response.completed");
+    expect(completed?.data).toMatchObject({
+      response: {
+        output: [{
+          type: "image_generation_call",
+          result: "ZmFrZS1pbWFnZQ==",
+        }],
+      },
+    });
+  });
+
   it("emits response.failed when the stream ends before response.completed", async () => {
     const events = await collectStreamEvents([
       { event: "response.created", data: { response: { id: "resp_stream_1" } } },

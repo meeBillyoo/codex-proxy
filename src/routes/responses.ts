@@ -206,7 +206,14 @@ export function createResponsesRoutes(
       codexRequest.service_tier = serviceTier;
     }
 
-    const defaultTools = resolveDefaultTools(c, { allowUnauthenticated: false });
+    // Native Codex clients (including Codex App) do not always echo hosted
+    // tools in every turn. Keep image generation available by default while
+    // still honoring an explicit model.default_tools configuration and the
+    // request-level opt-out headers handled by resolveDefaultTools().
+    const defaultTools = resolveDefaultTools(c, {
+      allowUnauthenticated: false,
+      fallbackDefaultTools: ["image_generation"],
+    });
     if (defaultTools.length > 0 || (Array.isArray(body.tools) && body.tools.length > 0)) {
       const merged = mergeDefaultTools(Array.isArray(body.tools) ? (body.tools as Record<string, unknown>[]) : undefined, defaultTools);
       if (merged.length > 0) {
@@ -220,8 +227,12 @@ export function createResponsesRoutes(
       codexRequest.parallel_tool_calls = body.parallel_tool_calls;
     }
 
-    const expectsImageGen = Array.isArray(codexRequest.tools)
-      && codexRequest.tools.some((tool) => isRecord(tool) && tool.type === "image_generation");
+    // A fallback hosted tool only makes image generation available; it does
+    // not mean this turn actually attempted an image. Keep the accounting
+    // flag tied to a client-declared image tool so ordinary text turns are not
+    // recorded as failed image requests when the upstream returns no image.
+    const expectsImageGen = Array.isArray(body.tools)
+      && body.tools.some((tool) => isRecord(tool) && tool.type === "image_generation");
 
     // Text format (JSON mode / structured outputs)
     let tupleSchema: Record<string, unknown> | null = null;

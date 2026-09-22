@@ -164,6 +164,39 @@ describe("/v1/responses — optional instructions", () => {
     expect(req.instructions).toBe("");
   });
 
+  it("injects image_generation for native Responses clients by default", async () => {
+    await app.request("/v1/responses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "codex",
+        input: [{ role: "user", content: "Generate an image" }],
+        stream: true,
+      }),
+    });
+
+    const req = capturedCodexRequest as { tools?: unknown[] };
+    expect(req.tools).toEqual([{ type: "image_generation" }]);
+  });
+
+  it("honors the native Responses default-tool opt-out header", async () => {
+    await app.request("/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-codex-no-default-tools": "1",
+      },
+      body: JSON.stringify({
+        model: "codex",
+        input: [{ role: "user", content: "Do not use hosted tools" }],
+        stream: true,
+      }),
+    });
+
+    const req = capturedCodexRequest as { tools?: unknown[] };
+    expect(req.tools).toBeUndefined();
+  });
+
   it("preserves instructions when provided as string", async () => {
     await app.request("/v1/responses", {
       method: "POST",
