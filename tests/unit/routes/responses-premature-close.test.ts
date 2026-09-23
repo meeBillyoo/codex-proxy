@@ -188,7 +188,7 @@ describe("streamPassthrough premature close handling", () => {
     expect(evt.accountEntryId).toBeUndefined();
   });
 
-  it("backfills streamed image output into response.completed", async () => {
+  it("does not duplicate streamed image bytes in response.completed", async () => {
     const events = await collectStreamEvents([
       { event: "response.created", data: { response: { id: "resp_stream_image" } } },
       {
@@ -215,15 +215,146 @@ describe("streamPassthrough premature close handling", () => {
       },
     ]);
 
+    const imageDone = events.find((event) => event.event === "response.output_item.done");
+    const completed = events.find((event) => event.event === "response.completed");
+    expect(imageDone?.data).toMatchObject({
+      item: {
+        type: "image_generation_call",
+        result: "ZmFrZS1pbWFnZQ==",
+      },
+    });
+    expect(completed?.data).toMatchObject({ response: { output: [] } });
+  });
+
+  it("preserves an authoritative non-empty completed image output", async () => {
+    const imageItem = {
+      id: "img_call_authoritative",
+      type: "image_generation_call",
+      status: "completed",
+      result: "YXV0aG9yaXRhdGl2ZS1pbWFnZQ==",
+    };
+    const events = await collectStreamEvents([
+      { event: "response.created", data: { response: { id: "resp_stream_authoritative" } } },
+      { event: "response.output_item.done", data: { output_index: 0, item: imageItem } },
+      {
+        event: "response.completed",
+        data: {
+          response: {
+            id: "resp_stream_authoritative",
+            output: [imageItem],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        },
+      },
+    ]);
+
+    const completed = events.find((event) => event.event === "response.completed");
+    expect(completed?.data).toEqual({
+      response: {
+        id: "resp_stream_authoritative",
+        output: [imageItem],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    });
+  });
+
+  it("forwards a large streamed image result exactly once when completed output is empty", async () => {
+    const largeImageResult = "a".repeat(3 * 1024 * 1024);
+    const events = await collectStreamEvents([
+      { event: "response.created", data: { response: { id: "resp_stream_large_image" } } },
+      {
+        event: "response.output_item.done",
+        data: {
+          output_index: 0,
+          item: {
+            id: "img_call_large",
+            type: "image_generation_call",
+            status: "completed",
+            result: largeImageResult,
+          },
+        },
+      },
+      {
+        event: "response.completed",
+        data: {
+          response: {
+            id: "resp_stream_large_image",
+            output: [],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        },
+      },
+    ]);
+
+    const imageDone = events.find((event) => event.event === "response.output_item.done");
+    const completed = events.find((event) => event.event === "response.completed");
+    expect((imageDone?.data.item as { result: string }).result).toBe(largeImageResult);
+    expect(completed?.data).toMatchObject({ response: { output: [] } });
+  });
+
+  it("still backfills non-image output items into response.completed", async () => {
+    const events = await collectStreamEvents([
+      { event: "response.created", data: { response: { id: "resp_stream_message" } } },
+      {
+        event: "response.output_item.done",
+        data: {
+          output_index: 0,
+          item: {
+            id: "msg_1",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: "hello" }],
+          },
+        },
+      },
+      {
+        event: "response.completed",
+        data: {
+          response: {
+            id: "resp_stream_message",
+            output: [],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        },
+      },
+    ]);
+
     const completed = events.find((event) => event.event === "response.completed");
     expect(completed?.data).toMatchObject({
       response: {
-        output: [{
-          type: "image_generation_call",
-          result: "ZmFrZS1pbWFnZQ==",
-        }],
+        output: [{ id: "msg_1", type: "message" }],
       },
     });
+  });
+
+  it("does not duplicate repeated output items when backfilling", async () => {
+    const item = {
+      id: "msg_duplicate",
+      type: "message",
+      role: "assistant",
+      status: "completed",
+      content: [{ type: "output_text", text: "hello" }],
+    };
+    const events = await collectStreamEvents([
+      { event: "response.created", data: { response: { id: "resp_stream_duplicate" } } },
+      { event: "response.output_item.done", data: { output_index: 0, item } },
+      { event: "response.output_item.done", data: { output_index: 0, item: { ...item } } },
+      {
+        event: "response.completed",
+        data: {
+          response: {
+            id: "resp_stream_duplicate",
+            output: [],
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
+        },
+      },
+    ]);
+
+    const completed = events.find((event) => event.event === "response.completed");
+    const output = (completed?.data.response as { output: unknown[] }).output;
+    expect(output).toHaveLength(1);
   });
 
   it("emits response.failed when the stream ends before response.completed", async () => {

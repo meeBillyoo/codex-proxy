@@ -42,6 +42,22 @@ function extractOutputTextFromItem(item: unknown): string {
   return chunks.join("");
 }
 
+function outputItemIdentity(item: unknown): string | null {
+  if (!isRecord(item) || typeof item.id !== "string" || !item.id) return null;
+  return item.id;
+}
+
+function dedupeOutputItems(items: readonly unknown[]): unknown[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const identity = outputItemIdentity(item);
+    if (!identity) return true;
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
 export function syncOutputTextFromOutput(response: Record<string, unknown>): void {
   if (!Array.isArray(response.output)) return;
   const texts = (response.output as unknown[]).map(extractOutputTextFromItem).filter(Boolean);
@@ -49,11 +65,9 @@ export function syncOutputTextFromOutput(response: Record<string, unknown>): voi
 }
 
 /**
- * The Codex backend may emit a complete output item (including the base64
- * image result) in response.output_item.done and then finish with
- * response.completed.response.output omitted or empty. Some clients render
- * only the completed response object, so keep the streamed response usable by
- * reconstructing that field from the items already seen on the stream.
+ * Reconstruct a missing or empty completed output from items already observed
+ * on the stream. Image items are intentionally excluded because their base64
+ * result has already been forwarded by response.output_item.done.
  */
 function backfillStreamedCompletedOutput(
   data: unknown,
@@ -64,8 +78,16 @@ function backfillStreamedCompletedOutput(
   const response = data.response;
   if (Array.isArray(response.output) && response.output.length > 0) return data;
 
-  const output = outputItems.length > 0
-    ? [...outputItems]
+  // Image bytes have already been sent in response.output_item.done. Keep
+  // that event as the single streamed transport of the base64 result instead
+  // of copying the same payload into a synthetic response.completed output.
+  // Other item types still need completion backfill for clients that consume
+  // only the final response snapshot.
+  const backfillableItems = dedupeOutputItems(
+    outputItems.filter((item) => !isRecord(item) || item.type !== "image_generation_call"),
+  );
+  const output = backfillableItems.length > 0
+    ? backfillableItems
     : textDeltas
       ? [{
           type: "message",
